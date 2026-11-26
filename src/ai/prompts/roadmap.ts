@@ -1,7 +1,7 @@
 import { z } from "zod/v4";
 import { PERSON_ROLES } from "@/domain/types";
 
-export const PROMPT_VERSION = "roadmap@2026-11-26.1";
+export const PROMPT_VERSION = "roadmap@2026-11-26.2";
 
 export const RoadmapSchema = z.object({
   proposals: z.array(z.object({
@@ -27,7 +27,7 @@ export function buildUser(input: { movement: string; project: string | null; ite
     "Propose at most 5 adjustments:",
     "- ALTERNATIVE (kind ALTERNATIVE): useful work the employee can do while a pending or BLOCKED item is waited for (e.g. documentation reading or shadowing while access is pending). relatesToKey = that item's key.",
     "- ADD (kind KT, LOGISTICS or OWNERSHIP): a missing activity the sources justify.",
-    "- SKIP (kind KT): only if a source shows the competency is already validated (e.g. a reallocation); relatesToKey = the KT item key.",
+    "- SKIP: do not propose skips. Redundant training is skipped only when a confirmed skill ticks off a requirement (a deterministic rule outside your control).",
     "Use only keys from BACKBONE for relatesToKey (or null) and only source IDs from SOURCES for evidenceIds. Do not invent people, dates or validated competencies.",
     'Return JSON: {"proposals":[{"type":"…","kind":"…","phase":1,"title":"…","description":"…","ownerRole":"…","completionCriteria":"…","relatesToKey":null,"rationale":"…","evidenceIds":["…"]}]}',
     "",

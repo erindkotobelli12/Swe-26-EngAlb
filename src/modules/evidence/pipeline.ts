@@ -11,7 +11,7 @@ import { audit, type Actor } from "@/modules/audit";
 import { loadCaseState } from "@/modules/case/loadCaseState";
 import { recomputeCase, type RecomputeSummary } from "@/modules/case/recompute";
 import { evaluateReadiness } from "@/modules/readiness/evaluate";
-import { assertCan, type Principal } from "@/modules/permissions";
+import { assertAllowed, type Principal } from "@/modules/permissions";
 import { canonicalClaim } from "@/domain/claimFields";
 import { buildBackbone, diffBackbone } from "@/modules/roadmap/backbone";
 import { applyClaim, normalizeValue, parseField, requiresTechnicalReviewer } from "./fieldMapper";
@@ -43,7 +43,7 @@ export type EvidenceInput = z.infer<typeof EvidenceInputSchema>;
 
 /** Step 1: store verbatim and immutable, pending human review. */
 export async function ingestEvidence(input: EvidenceInput, principal: Principal, db: PrismaClient = prisma): Promise<string> {
-  assertCan(principal, "evidence.add", { employeeId: input.employeeId });
+  await assertAllowed(principal, "evidence.add", { employeeId: input.employeeId }, db);
   const employee = await db.employee.findUnique({ where: { id: input.employeeId }, include: { case: true } });
   if (!employee?.case) throw new PipelineError("Unknown employee case.");
   if (input.inReplyToId) {
@@ -68,9 +68,9 @@ export async function ingestEvidence(input: EvidenceInput, principal: Principal,
 
 /** Accept or reject the source itself. Content never changes. */
 export async function reviewEvidence(evidenceId: string, decision: "APPROVED" | "REJECTED", reason: string, principal: Principal, db: PrismaClient = prisma): Promise<RecomputeSummary | null> {
-  assertCan(principal, "evidence.review");
   const ev = await db.evidence.findUnique({ where: { id: evidenceId } });
   if (!ev) throw new PipelineError("Unknown evidence.");
+  await assertAllowed(principal, "evidence.review", { employeeId: ev.employeeId, projectId: ev.projectId }, db);
   if (decision === "REJECTED" && reason.trim().length < 3) throw new PipelineError("A reason is required to reject evidence.");
   await db.evidence.update({ where: { id: evidenceId }, data: { reviewStatus: decision } });
   await audit({ actor: actorOf(principal), action: decision === "APPROVED" ? "EVIDENCE_APPROVED" : "EVIDENCE_REJECTED", entityType: "Evidence", entityId: evidenceId, employeeId: ev.employeeId, before: { reviewStatus: ev.reviewStatus }, after: { reviewStatus: decision }, evidenceIds: [evidenceId], details: reason || "Source accepted as authentic." }, db);
@@ -81,9 +81,9 @@ export type ExtractionResult = { ok: true; created: number; dropped: { field: st
 
 /** Step 2: the Extraction Agent proposes claims; the server verifies every excerpt before storing. */
 export async function extractClaims(evidenceId: string, principal: Principal, db: PrismaClient = prisma): Promise<ExtractionResult> {
-  assertCan(principal, "ai.run");
   const ev = await db.evidence.findUnique({ where: { id: evidenceId } });
   if (!ev?.employeeId) throw new PipelineError("Extraction needs evidence linked to an employee case.");
+  await assertAllowed(principal, "ai.run", { employeeId: ev.employeeId }, db);
   const state = await loadCaseState(ev.employeeId, db);
   if (!state) throw new PipelineError("Unknown case.");
   const input = {
@@ -118,9 +118,9 @@ export async function extractClaims(evidenceId: string, principal: Principal, db
 
 /** Human-authored claim (works when the LLM is down). The excerpt must still be verbatim. */
 export async function addManualClaim(input: { evidenceId: string; field: string; value: string; excerpt: string }, principal: Principal, db: PrismaClient = prisma): Promise<void> {
-  assertCan(principal, "evidence.review");
   const ev = await db.evidence.findUnique({ where: { id: input.evidenceId } });
   if (!ev?.employeeId) throw new PipelineError("Unknown evidence.");
+  await assertAllowed(principal, "evidence.review", { employeeId: ev.employeeId }, db);
   if (!verifyExcerpt(input.excerpt, ev.content)) throw new PipelineError("The excerpt must be copied verbatim from the source.");
   const parsed = parseField(input.field);
   const value = parsed.kind === "INFO" ? input.value.trim() : normalizeValue(parsed, input.value);
@@ -141,13 +141,13 @@ export async function reviewClaim(
   principal: Principal,
   db: PrismaClient = prisma,
 ): Promise<ClaimReviewResult> {
-  assertCan(principal, "evidence.review");
   const claim = await db.evidenceClaim.findUnique({ where: { id: input.claimId }, include: { evidence: true } });
   if (!claim?.evidence.employeeId) throw new PipelineError("Unknown claim.");
+  await assertAllowed(principal, "evidence.review", { employeeId: claim.evidence.employeeId }, db);
   if (claim.reviewStatus !== "PENDING") throw new PipelineError("This claim has already been reviewed.");
   const employeeId = claim.evidence.employeeId;
   const parsed = parseField(claim.field);
-  if (requiresTechnicalReviewer(parsed)) assertCan(principal, "claim.reviewTechnical");
+  if (requiresTechnicalReviewer(parsed)) await assertAllowed(principal, "claim.reviewTechnical", { employeeId }, db);
   const actor = actorOf(principal);
   const now = auditTimestamp();
 

@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { getSession } from "@/lib/auth";
+import { visibleEmployeeIds } from "@/modules/permissions";
+import { getScope } from "@/server/principal";
 import { runAgent } from "@/ai/runAgent";
 import { verifyExcerpt } from "@/ai/verify";
 import * as prompt from "@/ai/prompts/assistant";
@@ -23,8 +25,9 @@ export async function POST(request: NextRequest) {
 
   try {
     const session = await getSession();
-    // Scope comes from the session: employees only ever see their own case.
-    const ids = session.role === "EMPLOYEE" ? (session.employeeId ? [session.employeeId] : []) : await listCaseEmployeeIds();
+    // Scope comes from the permission module: everyone only sees the cases in their scope (employees: their own).
+    const scope = await getScope();
+    const ids = visibleEmployeeIds(scope).filter((id) => session.role !== "EMPLOYEE" || id === session.employeeId);
     const states = (await Promise.all(ids.map((id) => loadCaseState(id)))).filter((s): s is NonNullable<typeof s> => Boolean(s));
     const sources = new Map<string, string>();
     const cases = states.map((s) => {

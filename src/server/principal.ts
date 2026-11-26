@@ -1,12 +1,16 @@
+import { cache } from "react";
 import { ZodError } from "zod";
 import { getSession } from "@/lib/auth";
-import { PermissionError, type Principal } from "@/modules/permissions";
+import { PermissionError, resolveScope, type Principal, type Scope } from "@/modules/permissions";
 import type { Actor } from "@/modules/audit";
 
 export async function getPrincipal(): Promise<Principal> {
   const s = await getSession();
-  return { userId: s.userId, role: s.role, employeeId: s.employeeId, name: s.name };
+  return { userId: s.userId, role: s.role, employeeId: s.employeeId, name: s.name, personId: s.personId };
 }
+
+/** The current user's permission scope, resolved once per request. */
+export const getScope = cache(async (): Promise<Scope> => resolveScope(await getPrincipal()));
 
 export const actorOf = (p: Principal): Actor => ({ userId: p.userId, label: p.name, role: p.role });
 

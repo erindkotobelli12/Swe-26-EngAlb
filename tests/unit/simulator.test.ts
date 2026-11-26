@@ -24,7 +24,7 @@ describe("what-if simulator", () => {
     const toggles = availableToggles(state, evaluateReadiness(state));
     const items: Override[] = toggles.flatMap((t) => (t.kind === "check" ? [t.override] : [t.options.at(-1)!.override]));
     const result = simulate(state, { items, includeProposed: true });
-    expect(result.simulated.level).toBe("Independently Ready");
+    expect(result.simulated.level).toBe("Independently ready");
     expect(await snapshot()).toBe(before);
     expect((await loadCaseState("ONB-002", db, "2026-10-14"))!.access.find((a) => a.application === "Helix Service Desk")!.status).toBe("REQUESTED");
   });

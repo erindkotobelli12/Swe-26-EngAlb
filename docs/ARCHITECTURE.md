@@ -55,22 +55,29 @@ The simulator applies overrides to `structuredClone(state)` and calls exactly `e
 
 ```mermaid
 erDiagram
+  Person ||--o| Employee : "is (case anchor)"
+  Person ||--o| User : "demo login"
+  Person ||--o{ ProjectAssignment : "holds role on"
+  Project ||--o{ ProjectAssignment : "has"
+  ProjectAssignment }o--o| Person : "reports to"
+  Person ||--o{ EmployeeSkill : "has skill"
+  Skill ||--o{ EmployeeSkill : ""
+  Project ||--o{ OnboardingRequirement : "defined by its Technical Lead"
+  OnboardingRequirement }o--o| Skill : "links"
+  Employee ||--o{ EmployeeRequirementStatus : "progress / check-off"
+  OnboardingRequirement ||--o{ EmployeeRequirementStatus : ""
   Employee ||--o| OnboardingCase : has
-  Employee }o--o| Project : "works on"
-  Employee ||--o{ AccessRequest : needs
-  Employee ||--o{ KTActivity : learns
+  Employee ||--o{ PreboardingItem : "pre-boarding checklist"
+  Employee ||--o{ AccessRequest : "needs (requirementId)"
+  Employee ||--o{ KTActivity : "learns (requirementId)"
   Employee ||--o{ Evidence : "is subject of"
   Evidence ||--o{ EvidenceClaim : "states"
   OnboardingCase ||--o{ Finding : "has"
   OnboardingCase ||--o{ Dependency : "graph edges"
   OnboardingCase ||--o{ ReadinessValidation : "human TL decisions"
-  Employee ||--o{ ReadinessAssessment : "assessed-level history"
   Finding ||--o{ ActionItem : "follow-up actions"
-  Person }o--o| Project : "role holder"
-  User }o--o| Employee : "demo login maps to"
   Communication }o--o{ Employee : "covers (JSON ids)"
-  Briefing ||--|| Briefing : "diffed with previous"
-  AIRun ||--o{ Finding : "aiRunId"
+  Improvement }o--o| Project : "optional"
   AuditLog }o--o| User : actor
 ```
 
@@ -78,13 +85,30 @@ Key columns:
 
 | Model | Columns |
 |---|---|
-| `AccessRequest` | `status` ∈ NOT_REQUESTED…USABLE, `usableConfirmedAt`, `usableEvidenceId`, `handlerRole`, `approverRole`, `owner` (credentials are never stored) |
-| `KTActivity` | `stage`, `stageBasis` (OBSERVED / SELF_REPORTED / REPORTED / ASSESSMENT), `scopeType` (CORE / COMPLEX), `status` (PROPOSED / CONFIRMED / REJECTED), `requiredApps` |
-| `Finding` | `origin` (RULE / AI), `category`, `fingerprint` (idempotent upsert), `facts`, `assumptions`, `rootCauses`, `recommendedActions`, `affectedEntities`, `aiAnalysis`, resolution fields |
-| `Dependency` | `fromType/fromId → toType/toId`, `status` (PROPOSED / CONFIRMED / REJECTED), `origin` (RULE / TEMPLATE / AI / HUMAN), `rationale`, `excerpts` |
+| `User` | `role` = primary persona (PMO / HR / ADDITIONAL_MANAGER / LINE_MANAGER / TECH_LEAD / EMPLOYEE); `personId`, `employeeId` |
+| `Person` | `role` (primary or organisation role), `isSimulated` (sample person, shown with a "Sample data" tag) |
+| `ProjectAssignment` | `projectId`, `personId`, `role` (ADDITIONAL_MANAGER / LINE_MANAGER / TECH_LEAD / EMPLOYEE), `reportsToPersonId`, `assignedById/At`, `startDate`, `endDate`, `status` (ACTIVE / COMPLETED / REMOVED), `endReason`, `movement`, `isSimulated`. Never hard-deleted. |
+| `OnboardingCase` | `phase` (PRE_BOARDING / ONBOARDING / READY / CLOSED), `phaseChangedAt/By`, readiness snapshot columns |
+| `PreboardingItem` | `category`, `ownerRole` (HR / LINE_MANAGER), `status` (TODO / IN_PROGRESS / DONE / BLOCKED / NOT_APPLICABLE), `blockerReason`, `dueDate`, `evidenceId`, `updatedBy/At` |
+| `Skill`, `EmployeeSkill` | catalogue; per-person `level`, `source` (SELF_DECLARED / TL_CONFIRMED / PREVIOUS_PROJECT / ASSESSMENT), `status` (CLAIMED / CONFIRMED / REJECTED), `confirmedById/At` |
+| `OnboardingRequirement` | `type` (SKILL / KT_ACTIVITY / ACCESS / DOCUMENT), `skillId`, `requiredLevel`, `completionCriteria`, `mandatory`, `status` (ACTIVE / RETIRED) |
+| `EmployeeRequirementStatus` | `status` (TODO / IN_PROGRESS / DONE / SATISFIED_BY_EXISTING_SKILL / WAIVED), `satisfiedBySkillId`, `checkoffUndone`, `decidedById/At`, `note` |
+| `Improvement` | `projectId?`, `source` (INSIGHT / BRIEFING / MANUAL), `refs`, `ownerPersonId`, `status` (PROPOSED / APPROVED / IN_PROGRESS / DONE / DROPPED), `outcomeNote` |
+| `Briefing` | `role`, `scopeKey` (ALL or project:id), `generatedById` |
+| `AccessRequest` | `status` ∈ NOT_REQUESTED…USABLE, `usableConfirmedAt`, `handlerRole`, `owner`, `requirementId` (credentials are never stored) |
+| `KTActivity` | `stage`, `stageBasis`, `scopeType`, `status`, `requiredApps`, `requirementId` |
+| `Finding` | `origin` (RULE / AI), `category`, `fingerprint`, `facts`, `assumptions`, `rootCauses`, `recommendedActions`, resolution fields |
 | `AIRun` | `agent`, `promptVersion`, `model`, `inputHash`, `inputRefs` (IDs only), `output`, `status`, `durationMs` |
 
-All schema changes are Prisma migrations: `init`, `decision_support_foundation`, `followup_communications`, `management_briefing`, `adaptive_roadmap`.
+All schema changes are Prisma migrations: `init`, `decision_support_foundation`, `followup_communications`, `management_briefing`, `adaptive_roadmap`, `org_model_assignments_phases` (also migrates MANAGEMENT → ADDITIONAL_MANAGER), `briefing_scope`, `preboarding_checklist`, `skills_requirements`, `improvements`.
+
+### Permissions and scope
+
+`src/modules/permissions.ts` resolves a **scope** per request (`resolveScope`): the user's project roles from ACTIVE assignments, every visible case with the user's relations to it (PMO, HR, AM, LM, TL, SELF) and its phase, and visible people. `can(scope, permission, context)` is pure and tested. Pages call `getScope()` (cached per request); modules call `assertAllowed(principal, permission, context)` before writing.
+
+### Writers that only humans trigger
+
+`modules/phase/transition.ts` (the only writer of `phase`), `modules/projects/service.ts` (projects, assignments, Technical Lead), `modules/preboarding/service.ts` (checklist, hand-over), `modules/requirements/*` (requirements, deterministic check-off), `modules/skills/service.ts`, `modules/improvements/service.ts`, `modules/validation/recordValidation.ts`. A test fails if any file under `src/ai` imports them.
 
 ## AI privacy design
 
@@ -95,20 +119,24 @@ All schema changes are Prisma migrations: `init`, `decision_support_foundation`,
 
 ## Request handling
 
-- Server actions (`src/server/actions/*.ts`) are thin. Each one Zod-validates input, resolves the demo principal from an HTTP-only cookie, checks `assertCan(role, action)`, calls a module, then `revalidatePath`.
-- Route handlers: `/api/assistant`, `/api/session/role` and `/api/briefing/[id]/markdown`.
+- Server actions (`src/server/actions/*.ts`) are thin. Each one Zod-validates input, resolves the demo principal from an HTTP-only cookie, calls a module that checks `assertAllowed(principal, permission, context)` against the resolved scope, then `revalidatePath`.
+- Route handlers: `/api/assistant`, `/api/session/role`, `/api/briefing/[id]/markdown`, `/api/search` (global search, scoped) and `/api/evidence/[id]` (verbatim source preview for source chips, scoped).
 - Prisma queries are parameterised. SQLite JSON-in-string columns are parsed defensively (`src/lib/json.ts`).
 
 ## Folder map
 
 ```
 src/domain        pure types, authority matrix, claim-field whitelist
-src/modules       case (load, recompute, portfolio), readiness, detective, dependencies, simulator,
-                  reliability, evidence (pipeline, field mapper), followups, briefing, validation,
-                  permissions, audit
+src/modules       permissions (scope), case, readiness, detective, dependencies, simulator, reliability,
+                  evidence, followups, briefing, validation, phase, projects (health, queries, service),
+                  preboarding, requirements (check-off), skills, improvements, people, home, audit
 src/ai            provider (loopback Ollama), runAgent (AIRun log + cache), verify (excerpts), prompts/*
-src/server        principal/session helpers and server actions
-src/app           pages (dashboard, employees/[id] hub, investigations, follow-ups, briefing,
-                  evidence, knowledge, workspace, assistant, ai-activity) and route handlers
-src/config        thresholds, navigation, case tabs, simulated templates
+src/server        principal/scope, app shell data, server actions
+src/app           role homes (portfolio, my-projects, my-team, onboarding, preboarding, my-onboarding),
+                  projects, people, requirements, team, escalations, case hub, investigations,
+                  follow-ups, evidence, briefing, insights, knowledge, assistant, ai-activity
+src/components    ui/ (design system: primitives, overlays, toasts, provenance chips), layout/ (sidebar,
+                  top bar), feature components
+src/lib           labels (every user-facing enum label), clock, auth, db
+src/config        thresholds, navigation, case tabs, pre-boarding template, simulated templates
 ```

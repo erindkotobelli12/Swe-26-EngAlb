@@ -7,7 +7,9 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// Demo login identity. `role` drives permissions; `employeeId` maps employee users to their own case.
+// Demo login identity. `role` is the account's primary persona (PMO | HR | ADDITIONAL_MANAGER | LINE_MANAGER | TECH_LEAD | EMPLOYEE).
+// PMO and HR are organisation-level roles. Project roles come from ProjectAssignment rows, so permissions are
+// resolved from role + relationship + phase (src/modules/permissions.ts), never from this column alone.
 model User {
   id         String     @id
   name       String
@@ -15,25 +17,36 @@ model User {
   role       String
   employee   Employee?  @relation(fields: [employeeId], references: [id])
   employeeId String?    @unique
-  personId   String?
+  personId   String?    @unique
+  person     Person?    @relation(fields: [personId], references: [id])
   audited    AuditLog[]
 }
 
-// A stakeholder. Only names present in the starter pack are seeded; unknown holders of a role are role-only records (name = null).
-// role: EMPLOYEE | LINE_MANAGER | TECH_LEAD | KT_OWNER | PMO | HR | ACCESS_SUPPORT | APP_OWNER | TECH_MANAGER | MANAGEMENT | PROJECT_MANAGER
+// A person with a profile. Only names present in the starter pack are seeded as starter-pack people; anyone else is
+// either a role-only record (name = null) or a clearly labelled sample person (isSimulated = true).
+// role (primary / organisation role): EMPLOYEE | LINE_MANAGER | TECH_LEAD | ADDITIONAL_MANAGER | KT_OWNER | PMO | HR |
+//   ACCESS_SUPPORT | APP_OWNER | TECH_MANAGER | PROJECT_MANAGER
 model Person {
-  id          String   @id
+  id          String              @id
   name        String?
   role        String
   projectId   String?
-  project     Project? @relation(fields: [projectId], references: [id])
-  isSimulated Boolean  @default(false)
+  project     Project?            @relation(fields: [projectId], references: [id])
+  isSimulated Boolean             @default(false)
   note        String?
+  employee    Employee?
+  user        User?
+  assignments ProjectAssignment[] @relation("AssignmentPerson")
+  reports     ProjectAssignment[] @relation("AssignmentReportsTo")
+  skills      EmployeeSkill[]
 }
 
+// The onboarding-case anchor. Each employee is a Person (personId) with a profile; `name` keeps the tracker's verbatim name.
 model Employee {
   id              String                @id
   name            String
+  personId        String?               @unique
+  person          Person?               @relation(fields: [personId], references: [id])
   startDate       String
   movement        String
   projectId       String?
@@ -52,22 +65,162 @@ model Employee {
   evidence        Evidence[]
   actions         ActionItem[]
   assessments     ReadinessAssessment[]
+  preboarding     PreboardingItem[]
+  requirementStatuses EmployeeRequirementStatus[]
   user            User?
 }
 
-model Project {
-  id        String              @id
-  name      String
-  employees Employee[]
-  evidence  Evidence[]
-  resources KnowledgeResource[]
-  people    Person[]
+// A pre-boarding checklist item (template in src/config/preboarding.ts). Credentials are never stored.
+// category: HR_ADMIN | EQUIPMENT | ACCESS_REQUEST | WELCOME | CONTACTS; ownerRole: HR | LINE_MANAGER
+// status: TODO | IN_PROGRESS | DONE | BLOCKED | NOT_APPLICABLE
+model PreboardingItem {
+  id            String   @id @default(cuid())
+  employeeId    String
+  employee      Employee @relation(fields: [employeeId], references: [id])
+  templateKey   String?
+  title         String
+  category      String
+  ownerRole     String
+  status        String   @default("TODO")
+  blockerReason String?
+  note          String?
+  dueDate       String?
+  sortOrder     Int      @default(0)
+  evidenceId    String?
+  updatedBy     String
+  updatedAt     String
+
+  @@unique([employeeId, templateKey])
 }
 
+// status: ACTIVE | CLOSED
+model Project {
+  id          String              @id
+  name        String
+  code        String?
+  description String?
+  startDate   String?
+  status      String              @default("ACTIVE")
+  isSimulated Boolean             @default(false)
+  createdById String?
+  createdAt   String?
+  employees   Employee[]
+  evidence    Evidence[]
+  resources   KnowledgeResource[]
+  people      Person[]
+  assignments ProjectAssignment[]
+  requirements OnboardingRequirement[]
+}
+
+// Skill catalogue. category: APPLICATION | TECHNICAL | DOMAIN | PROCESS
+model Skill {
+  id             String                  @id
+  name           String                  @unique
+  category       String
+  description    String                  @default("")
+  employeeSkills EmployeeSkill[]
+  requirements   OnboardingRequirement[]
+}
+
+// A skill on a person's profile. Only CONFIRMED skills count for automatic requirement check-off; a self-declared skill
+// stays CLAIMED until a Technical Lead confirms it. level: BASIC | INTERMEDIATE | ADVANCED
+// source: SELF_DECLARED | TL_CONFIRMED | PREVIOUS_PROJECT | ASSESSMENT; status: CLAIMED | CONFIRMED | REJECTED
+model EmployeeSkill {
+  id            String  @id @default(cuid())
+  personId      String
+  person        Person  @relation(fields: [personId], references: [id])
+  skillId       String
+  skill         Skill   @relation(fields: [skillId], references: [id])
+  level         String
+  source        String
+  status        String  @default("CLAIMED")
+  projectId     String?
+  evidenceId    String?
+  confirmedById String?
+  confirmedAt   String?
+  note          String?
+  isSimulated   Boolean @default(false)
+  createdAt     String
+  updatedAt     String?
+
+  @@unique([personId, skillId])
+}
+
+// What employees need for onboarding on a project, defined by the project's Technical Lead.
+// type: SKILL | KT_ACTIVITY | ACCESS | DOCUMENT; status: ACTIVE | RETIRED
+model OnboardingRequirement {
+  id                 String                      @id @default(cuid())
+  projectId          String
+  project            Project                     @relation(fields: [projectId], references: [id])
+  title              String
+  description        String                      @default("")
+  type               String
+  skillId            String?
+  skill              Skill?                      @relation(fields: [skillId], references: [id])
+  requiredLevel      String?
+  completionCriteria String
+  mandatory          Boolean                     @default(true)
+  status             String                      @default("ACTIVE")
+  createdById        String
+  createdAt          String
+  updatedAt          String?
+  statuses           EmployeeRequirementStatus[]
+}
+
+// One employee's progress on one requirement. SATISFIED_BY_EXISTING_SKILL is set only by the deterministic check-off rule
+// (src/modules/requirements/checkoff.ts) and can be undone by the Technical Lead with a reason (checkoffUndone).
+// status: TODO | IN_PROGRESS | DONE | SATISFIED_BY_EXISTING_SKILL | WAIVED
+model EmployeeRequirementStatus {
+  id                 String                @id @default(cuid())
+  employeeId         String
+  employee           Employee              @relation(fields: [employeeId], references: [id])
+  requirementId      String
+  requirement        OnboardingRequirement @relation(fields: [requirementId], references: [id])
+  status             String                @default("TODO")
+  satisfiedBySkillId String?
+  checkoffUndone     Boolean               @default(false)
+  decidedById        String?
+  decidedAt          String?
+  note               String?
+
+  @@unique([employeeId, requirementId])
+}
+
+// A person's role on a project. Never hard-deleted: removal sets status REMOVED (or COMPLETED) with an end date, and is audited.
+// role: ADDITIONAL_MANAGER | LINE_MANAGER | TECH_LEAD | EMPLOYEE. One person may hold several roles on one project
+// (e.g. Line Manager and Technical Lead). Reporting line: Employee → Line Manager → Additional Manager (reportsToPersonId).
+// status: ACTIVE | COMPLETED | REMOVED
+model ProjectAssignment {
+  id                String   @id @default(cuid())
+  projectId         String
+  project           Project  @relation(fields: [projectId], references: [id])
+  personId          String
+  person            Person   @relation("AssignmentPerson", fields: [personId], references: [id])
+  role              String
+  reportsToPersonId String?
+  reportsTo         Person?  @relation("AssignmentReportsTo", fields: [reportsToPersonId], references: [id])
+  assignedById      String
+  assignedAt        String
+  startDate         String?
+  endDate           String?
+  status            String   @default("ACTIVE")
+  movement          String?
+  endReason         String?
+  isSimulated       Boolean  @default(false)
+
+  @@index([projectId, role, status])
+  @@index([personId, status])
+}
+
+// phase: PRE_BOARDING | ONBOARDING | READY | CLOSED — separate from readiness level and reliability.
+// Only humans change phase (hand-over by the Line Manager; READY only through a Technical Lead's validation).
 model OnboardingCase {
   id                String                @id
   employeeId        String                @unique
   employee          Employee              @relation(fields: [employeeId], references: [id])
+  phase             String                @default("ONBOARDING")
+  phaseChangedAt    String?
+  phaseChangedBy    String?
   assessedStatus    String                @default("UNKNOWN")
   validatedStatus   String                @default("UNKNOWN")
   riskFlags         String                @default("[]")
@@ -112,6 +265,7 @@ model AccessRequest {
   usableEvidenceId  String?
   lastUpdate        String?
   nextFollowUp      String?
+  requirementId     String?
   updatedAt         DateTime @default(now()) @updatedAt
 }
 
@@ -135,6 +289,7 @@ model KTActivity {
   validation       String   @default("PENDING")
   requiredForReady Boolean  @default(true)
   requiredApps     String   @default("[]")
+  requirementId    String?
   status           String   @default("CONFIRMED")
   origin           String   @default("EVIDENCE")
   originNote       String?
@@ -372,11 +527,14 @@ model RoadmapItem {
 
 // A role-specific management briefing. Every statement carries refs (finding:/evidence:/action:) validated server-side.
 // narrativeSource: AI (validated AI narrative) | DETERMINISTIC (AI unavailable or rejected; rule-generated statements).
+// scopeKey: "ALL" (the author's whole scope) or "project:<id>" (one project). generatedById: the author's account.
 model Briefing {
   id              String  @id @default(cuid())
   role            String
+  scopeKey        String  @default("ALL")
   generatedAt     String
   generatedBy     String
+  generatedById   String?
   evaluationDate  String
   sectionsJson    String
   snapshotJson    String
@@ -418,4 +576,25 @@ model AuditLog {
   evidenceIds String @default("[]")
   details    String
   timestamp  String
+}
+
+// An improvement the PMO drives from insights or briefings. Only humans create or approve improvements; AI suggestions
+// can only pre-fill the form. projectId null = organisation-wide. refs: JSON list of "case:<id>", "finding:<id>", "figure:<key>".
+// source: INSIGHT | BRIEFING | MANUAL; status: PROPOSED | APPROVED | IN_PROGRESS | DONE | DROPPED
+model Improvement {
+  id            String  @id @default(cuid())
+  projectId     String?
+  title         String
+  description   String
+  source        String
+  refs          String  @default("[]")
+  ownerPersonId String?
+  status        String  @default("PROPOSED")
+  createdById   String
+  createdAt     String
+  approvedById  String?
+  approvedAt    String?
+  dueDate       String?
+  outcomeNote   String?
+  updatedAt     String?
 }

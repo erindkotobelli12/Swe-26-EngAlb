@@ -64,18 +64,33 @@ export function computeGates(state: CaseState): Gate[] {
       : gate("ACCESS_USABLE", "SATISFIED", required.map((a) => `${a.application}: successful use confirmed${a.usableConfirmedAt ? ` ${a.usableConfirmedAt}` : ""}.`), ev));
   }
 
-  // KT_AGREED / EXECUTION_OBSERVED — assessments never satisfy execution
+  // KT_AGREED / EXECUTION_OBSERVED — assessments never satisfy execution. A requirement ticked off by a CONFIRMED skill
+  // counts here (citing the skill record), but never for technical validation.
   const agreed = state.kt.filter((k) => k.status === "CONFIRMED" && k.required);
+  const skillReqs = (state.requirements ?? []).filter((r) => r.type === "SKILL" && r.mandatory && r.status !== "WAIVED");
   const proposedKt = state.kt.filter((k) => k.status === "PROPOSED");
-  const ktEvidence = agreed.map((k) => k.evidenceId).filter((x): x is string => Boolean(x));
-  if (!agreed.length) {
+  const ktEvidence = [
+    ...agreed.map((k) => k.coveredBySkill?.evidenceId ?? k.evidenceId),
+    ...skillReqs.map((r) => r.satisfiedBySkill?.evidenceId),
+  ].filter((x): x is string => Boolean(x));
+  if (!agreed.length && !skillReqs.length) {
     gates.push(gate("KT_AGREED", "UNKNOWN", [proposedKt.length ? `${proposedKt.length} KT activity(ies) proposed, none agreed yet.` : "No KT topics recorded."]));
     gates.push(gate("EXECUTION_OBSERVED", "UNKNOWN", ["No agreed KT activities, so execution cannot be assessed."]));
   } else {
-    gates.push(gate("KT_AGREED", "SATISFIED", [`${agreed.length} KT activity(ies) agreed: ${agreed.map((k) => k.title).join(", ")}.`], ktEvidence));
+    gates.push(gate("KT_AGREED", "SATISFIED", [
+      ...(agreed.length ? [`${agreed.length} KT activity(ies) agreed: ${agreed.map((k) => k.title).join(", ")}.`] : []),
+      ...(skillReqs.length ? [`${skillReqs.length} skill requirement(s): ${skillReqs.map((r) => r.title).join(", ")}.`] : []),
+    ], ktEvidence));
     const reasons: string[] = [];
     let ok = true;
+    for (const r of skillReqs) {
+      if (r.status === "SATISFIED_BY_EXISTING_SKILL" && r.satisfiedBySkill) { reasons.push(`${r.title}: already has the confirmed skill ${r.satisfiedBySkill.skillName} (${r.satisfiedBySkill.level.toLowerCase()}) — skill record.`); continue; }
+      if (r.status === "DONE") { reasons.push(`${r.title}: recorded as done by the Technical Lead.`); continue; }
+      ok = false;
+      reasons.push(`${r.title}: skill not shown yet.`);
+    }
     for (const k of agreed) {
+      if (k.coveredBySkill) { reasons.push(`${k.title}: already has the confirmed skill ${k.coveredBySkill.skillName} (${k.coveredBySkill.level.toLowerCase()}) — skill record.`); continue; }
       if (k.stage === "INDEPENDENT_EXECUTION" && k.stageBasis === "OBSERVED") { reasons.push(`${k.title}: independent execution observed.`); continue; }
       ok = false;
       if (k.stage === "INDEPENDENT_EXECUTION" && k.stageBasis === "SELF_REPORTED") reasons.push(`${k.title}: independent execution self-reported, not observed.`);

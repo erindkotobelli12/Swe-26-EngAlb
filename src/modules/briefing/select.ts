@@ -7,7 +7,7 @@ import { classifyCaseStatus, RELIABILITY_LABEL } from "@/modules/reliability/cla
  * Deterministic data selection for the briefing. Every statement carries typed refs
  * ("finding:<id>", "evidence:<id>", "action:<id>"); the AI may only rephrase/prioritise these statements.
  */
-export type BriefingRole = "PMO" | "TECH_LEAD" | "MANAGEMENT" | "LINE_MANAGER";
+export type BriefingRole = "PMO" | "ADDITIONAL_MANAGER" | "LINE_MANAGER" | "TECH_LEAD" | "HR";
 export type Statement = { text: string; refs: string[] };
 export type Section = { key: string; title: string; statements: Statement[]; note?: string; source?: "AI" | "DETERMINISTIC" };
 export type Snapshot = { levels: Record<string, string>; openFindings: Record<string, string>; resolved: string[] };
@@ -27,13 +27,17 @@ export const SECTION_TITLES: Record<string, string> = {
   local: "Local practical blockers",
   priorities: "Recommended priorities",
   changes: "Changes since the previous briefing",
+  pipeline: "Pre-boarding pipeline",
+  startDates: "Start dates at risk",
 };
 
 const ROLE_SECTIONS: Record<BriefingRole, string[]> = {
-  PMO: ["urgent", "intervention", "contradictions", "resolved", "overdue", "approaching", "priorities", "changes"],
+  // Portfolio level: risk and readiness distribution (formerly the Management view), the most urgent problems and escalations.
+  PMO: ["risk", "distribution", "urgent", "contradictions", "overdue", "resolved", "changes"],
+  ADDITIONAL_MANAGER: ["risk", "distribution", "urgent", "intervention", "overdue", "approaching", "resolved", "changes"],
   TECH_LEAD: ["validations", "ktGaps", "contradictions", "approaching", "resolved", "priorities", "changes"],
-  MANAGEMENT: ["risk", "distribution", "urgent", "approaching", "resolved", "changes"],
-  LINE_MANAGER: ["local", "overdue", "resolved", "changes"],
+  LINE_MANAGER: ["local", "intervention", "overdue", "resolved", "changes"],
+  HR: ["pipeline", "startDates", "local", "overdue", "changes"],
 };
 
 const tracker = (c: PortfolioCase) => c.state.evidence.find((e) => e.sourceType === "TRACKER")?.id;
@@ -46,7 +50,7 @@ export function snapshotOf(portfolio: PortfolioCase[]): Snapshot {
   };
 }
 
-export function selectBriefing(role: BriefingRole, portfolio: PortfolioCase[], groups: FollowUpGroup[], actions: OpenActionLite[], previous: { snapshot: Snapshot; generatedAt: string } | null, evaluationDate: string): Section[] {
+export function selectBriefing(role: BriefingRole, portfolio: PortfolioCase[], groups: FollowUpGroup[], actions: OpenActionLite[], previous: { snapshot: Snapshot; generatedAt: string } | null, evaluationDate: string, extra: Record<string, Statement[]> = {}): Section[] {
   const all = portfolio.flatMap((c) => c.open.map((f) => ({ c, f })));
   const name = (c: PortfolioCase) => c.state.employee.name;
   const sections: Record<string, Statement[]> = {};
@@ -104,6 +108,7 @@ export function selectBriefing(role: BriefingRole, portfolio: PortfolioCase[], g
     ...Object.keys(previous.snapshot.openFindings).filter((id) => !all.some(({ f }) => f.id === id)).map((id) => ({ text: `No longer open: ${previous.snapshot.openFindings[id]}.`, refs: [`finding:${id}`] })),
   ] : [];
 
+  Object.assign(sections, extra);
   return ROLE_SECTIONS[role].map((key) => ({
     key, title: SECTION_TITLES[key], statements: (sections[key] ?? []).filter((s) => s.refs.length > 0),
     ...(key === "changes" && !previous ? { note: "First briefing for this role — no previous briefing to compare with." } : {}),

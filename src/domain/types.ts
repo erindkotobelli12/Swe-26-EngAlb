@@ -1,3 +1,5 @@
+import * as L from "@/lib/labels";
+
 /**
  * Plain, Prisma-free domain types. Every deterministic engine (gates, detectors, dependency propagation,
  * reliability, simulator, follow-ups) is a pure function over `CaseState`, so the simulator can reuse
@@ -6,49 +8,21 @@
 
 export const PERSON_ROLES = [
   "EMPLOYEE", "LINE_MANAGER", "TECH_LEAD", "KT_OWNER", "PMO", "HR", "ACCESS_SUPPORT",
-  "APP_OWNER", "TECH_MANAGER", "MANAGEMENT", "PROJECT_MANAGER",
+  "APP_OWNER", "TECH_MANAGER", "ADDITIONAL_MANAGER", "PROJECT_MANAGER",
 ] as const;
 export type PersonRole = (typeof PERSON_ROLES)[number];
 
-export const ROLE_LABEL: Record<PersonRole, string> = {
-  EMPLOYEE: "Employee",
-  LINE_MANAGER: "Line Manager",
-  TECH_LEAD: "Technical Lead",
-  KT_OWNER: "KT Owner",
-  PMO: "PMO Coordinator",
-  HR: "HR",
-  ACCESS_SUPPORT: "Access Support",
-  APP_OWNER: "Application Owner",
-  TECH_MANAGER: "Technical Manager",
-  MANAGEMENT: "Management",
-  PROJECT_MANAGER: "Project Manager",
-};
-
-export function roleLabel(role: string | null | undefined): string {
-  if (!role) return "Unknown role";
-  return (ROLE_LABEL as Record<string, string>)[role] ?? role.replaceAll("_", " ").toLowerCase();
-}
+/** Labels come from the single labels module (src/lib/labels.ts). */
+export const ROLE_LABEL = L.ROLE_LABEL as Record<PersonRole, string>;
+export const roleLabel = L.roleLabel;
 
 export const ACCESS_STATUSES = ["NOT_REQUESTED", "REQUESTED", "APPROVAL_PENDING", "APPROVED", "PROVISIONED", "USABLE", "REJECTED"] as const;
 export type AccessStatus = (typeof ACCESS_STATUSES)[number];
-export const ACCESS_STATUS_LABEL: Record<AccessStatus, string> = {
-  NOT_REQUESTED: "Not requested",
-  REQUESTED: "Requested",
-  APPROVAL_PENDING: "Approval pending",
-  APPROVED: "Approved",
-  PROVISIONED: "Provisioned (use unconfirmed)",
-  USABLE: "Usable (use confirmed)",
-  REJECTED: "Rejected",
-};
+export const ACCESS_STATUS_LABEL = L.ACCESS_STATUS_LABEL as Record<AccessStatus, string>;
 
 export const KT_STAGES = ["NOT_STARTED", "SHADOWING", "SUPPORTED_EXECUTION", "INDEPENDENT_EXECUTION"] as const;
 export type KTStage = (typeof KT_STAGES)[number];
-export const KT_STAGE_LABEL: Record<KTStage, string> = {
-  NOT_STARTED: "Not started",
-  SHADOWING: "Shadowing",
-  SUPPORTED_EXECUTION: "Supported execution",
-  INDEPENDENT_EXECUTION: "Independent execution",
-};
+export const KT_STAGE_LABEL = L.KT_STAGE_LABEL as Record<KTStage, string>;
 export type StageBasis = "OBSERVED" | "SELF_REPORTED" | "REPORTED" | "ASSESSMENT" | "UNKNOWN";
 
 export const READINESS_LEVELS = [
@@ -56,16 +30,7 @@ export const READINESS_LEVELS = [
   "PARTIALLY_READY", "READY_WITH_SUPPORT", "INDEPENDENTLY_READY",
 ] as const;
 export type ReadinessLevel = (typeof READINESS_LEVELS)[number];
-export const READINESS_LABEL: Record<ReadinessLevel, string> = {
-  UNKNOWN: "Unknown",
-  PRE_ONBOARDING: "Pre-onboarding",
-  BLOCKED: "Blocked",
-  SHADOWING: "Shadowing",
-  SUPPORTED_EXECUTION: "Supported execution",
-  PARTIALLY_READY: "Partially Ready",
-  READY_WITH_SUPPORT: "Ready with Support",
-  INDEPENDENTLY_READY: "Independently Ready",
-};
+export const READINESS_LABEL = L.READINESS_LABEL as Record<ReadinessLevel, string>;
 
 export const GATE_IDS = [
   "SCOPE_CONFIRMED", "OWNERS_ASSIGNED", "ACCESS_IDENTIFIED", "ACCESS_USABLE", "KT_AGREED",
@@ -131,6 +96,25 @@ export type KTItem = {
   origin: string;
   originNote: string | null;
   evidenceId: string | null;
+  /** Set when the onboarding requirement behind this activity is ticked off by a confirmed skill. */
+  coveredBySkill?: SkillCover | null;
+};
+
+/** A confirmed skill record that satisfies a requirement (the rule's evidence). */
+export type SkillCover = { recordId: string; skillName: string; level: string; evidenceId: string | null };
+
+/** One onboarding requirement as it applies to this case. */
+export type RequirementItem = {
+  id: string;
+  statusId: string;
+  title: string;
+  type: "SKILL" | "KT_ACTIVITY" | "ACCESS" | "DOCUMENT";
+  mandatory: boolean;
+  status: "TODO" | "IN_PROGRESS" | "DONE" | "SATISFIED_BY_EXISTING_SKILL" | "WAIVED";
+  skillName: string | null;
+  requiredLevel: string | null;
+  completionCriteria: string;
+  satisfiedBySkill: SkillCover | null;
 };
 
 export type EvidenceItem = {
@@ -265,4 +249,6 @@ export type CaseState = {
   validations: ValidationItem[];
   communications: CommunicationItem[];
   knowledgeResources: { id: string; title: string; location: string; copyAllowed: boolean }[];
+  /** Active onboarding requirements of the case's project (empty when none are defined). */
+  requirements?: RequirementItem[];
 };

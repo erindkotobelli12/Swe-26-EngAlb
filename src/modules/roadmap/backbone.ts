@@ -46,12 +46,27 @@ export function buildBackbone(state: CaseState, readiness: ReadinessResult): Pla
   if (!kts.length) items.push({ key: "kt-topics", phase: 2, title: "Agree KT topics with the Technical Lead", owner: tl, completion: "KT activities agreed", status: "UNKNOWN", waitsFor: ["Confirm project and exact role"], evidenceIds: [], proposed: false });
   for (const k of kts) {
     const n = node(`kt:${k.id}`);
+    if (k.coveredBySkill) {
+      // Redundant training is skipped only through a requirement check-off by a CONFIRMED skill — never guessed.
+      items.push({ key: `kt:${k.id}`, phase: 2, title: k.title, owner: tl, completion: `Skipped: already has the confirmed skill ${k.coveredBySkill.skillName} (${k.coveredBySkill.level.toLowerCase()})`, status: "DONE", waitsFor: [], evidenceIds: k.coveredBySkill.evidenceId ? [k.coveredBySkill.evidenceId] : [], proposed: false });
+      continue;
+    }
     const done = k.stage === "INDEPENDENT_EXECUTION" && k.stageBasis === "OBSERVED";
     const status: PlanStatus = done ? "DONE" : n?.display === "BLOCKED" ? "BLOCKED" : k.stage !== "NOT_STARTED" ? "IN_PROGRESS" : "TODO";
     items.push({
       key: `kt:${k.id}`, phase: 2, title: k.title, owner: k.owner ?? (state.people.ktOwner ? state.people.ktOwner.name ?? "KT owner (name not recorded)" : "KT owner not recorded"),
       completion: `${k.scopeType === "COMPLEX" ? "Complex/exception cases" : "Core scope"}: shadowing → supported → independent execution observed (now: ${KT_STAGE_LABEL[k.stage]})`,
       status, waitsFor: (n?.blockedBy ?? []).map((b) => node(b)?.label ?? b), evidenceIds: k.evidenceId ? [k.evidenceId] : [], proposed: k.status === "PROPOSED",
+    });
+  }
+
+  for (const r of (state.requirements ?? []).filter((x) => (x.type === "SKILL" || x.type === "DOCUMENT") && x.status !== "WAIVED")) {
+    const covered = r.status === "SATISFIED_BY_EXISTING_SKILL" && r.satisfiedBySkill;
+    items.push({
+      key: `req:${r.id}`, phase: 2, title: r.type === "SKILL" ? `Skill: ${r.title}` : r.title, owner: tl,
+      completion: covered ? `Skipped: already has the confirmed skill ${r.satisfiedBySkill!.skillName} (${r.satisfiedBySkill!.level.toLowerCase()})` : r.completionCriteria,
+      status: covered || r.status === "DONE" ? "DONE" : r.status === "IN_PROGRESS" ? "IN_PROGRESS" : "TODO", waitsFor: [],
+      evidenceIds: covered && r.satisfiedBySkill!.evidenceId ? [r.satisfiedBySkill!.evidenceId] : [], proposed: false,
     });
   }
 

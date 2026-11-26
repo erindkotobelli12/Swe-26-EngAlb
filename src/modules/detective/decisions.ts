@@ -6,7 +6,7 @@ import { parseJson } from "@/lib/json";
 import type { RecommendedAction } from "@/domain/types";
 import { audit, type Actor } from "@/modules/audit";
 import { recomputeCase } from "@/modules/case/recompute";
-import { assertCan, type Principal } from "@/modules/permissions";
+import { assertAllowed, type Principal } from "@/modules/permissions";
 
 export class DecisionError extends Error {
   constructor(message: string) {
@@ -33,17 +33,18 @@ export const ResolveSchema = z.object({
 
 const actorOf = (p: Principal): Actor => ({ userId: p.userId, label: p.name, role: p.role });
 
-async function loadFinding(db: PrismaClient, findingId: string) {
+/** Loads a finding and checks the principal may decide it (phase owner, or the Line Manager for non-technical findings). */
+async function loadFinding(db: PrismaClient, findingId: string, principal: Principal) {
   const f = await db.finding.findUnique({ where: { id: findingId }, include: { case: true } });
   if (!f) throw new DecisionError("Unknown finding.");
+  await assertAllowed(principal, "finding.decide", { employeeId: f.case.employeeId, findingCategory: f.category }, db);
   return f;
 }
 
 /** Resolutions never delete or edit evidence, and conflicts are only closed by an explicit human decision. */
 export async function resolveFinding(input: z.infer<typeof ResolveSchema>, principal: Principal, db: PrismaClient = prisma): Promise<void> {
-  assertCan(principal, "finding.decide");
   const data = ResolveSchema.parse(input);
-  const f = await loadFinding(db, data.findingId);
+  const f = await loadFinding(db, data.findingId, principal);
   if (f.status === "RESOLVED" || f.status === "DISMISSED") throw new DecisionError("This finding is already closed.");
   const evidenceIds = parseJson<string[]>(f.evidenceIds, []);
   if (data.resolutionType === "CONFIRMED_SOURCE" && (!data.winnerEvidenceId || !evidenceIds.includes(data.winnerEvidenceId))) {
@@ -73,9 +74,8 @@ export async function resolveFinding(input: z.infer<typeof ResolveSchema>, princ
 }
 
 export async function dismissFinding(input: { findingId: string; reason: string }, principal: Principal, db: PrismaClient = prisma): Promise<void> {
-  assertCan(principal, "finding.decide");
   const reason = z.string().trim().min(3, "A reason is required to dismiss").max(1000).parse(input.reason);
-  const f = await loadFinding(db, input.findingId);
+  const f = await loadFinding(db, input.findingId, principal);
   if (f.status === "RESOLVED" || f.status === "DISMISSED") throw new DecisionError("This finding is already closed.");
   await db.finding.update({ where: { id: f.id }, data: { status: "DISMISSED", resolvedAt: auditTimestamp(), resolvedBy: principal.name, resolutionType: "DISMISSED", resolution: reason } });
   await audit({ actor: actorOf(principal), action: "FINDING_DISMISSED", entityType: "Finding", entityId: f.id, employeeId: f.case.employeeId, before: { status: f.status }, after: { status: "DISMISSED" }, evidenceIds: parseJson(f.evidenceIds, []), details: `${f.title} — ${reason}` }, db);
@@ -84,8 +84,7 @@ export async function dismissFinding(input: { findingId: string; reason: string 
 
 /** An AI proposal becomes an actual finding only when a human accepts it. */
 export async function acceptProposal(findingId: string, principal: Principal, db: PrismaClient = prisma): Promise<void> {
-  assertCan(principal, "finding.decide");
-  const f = await loadFinding(db, findingId);
+  const f = await loadFinding(db, findingId, principal);
   if (f.status !== "PROPOSED") throw new DecisionError("Only AI proposals can be accepted.");
   await db.finding.update({ where: { id: f.id }, data: { status: "OPEN" } });
   await audit({ actor: actorOf(principal), action: "AI_FINDING_ACCEPTED", entityType: "Finding", entityId: f.id, employeeId: f.case.employeeId, before: { status: "PROPOSED" }, after: { status: "OPEN" }, evidenceIds: parseJson(f.evidenceIds, []), details: `Accepted AI proposal: ${f.title}` }, db);
@@ -94,8 +93,7 @@ export async function acceptProposal(findingId: string, principal: Principal, db
 
 /** Hands a finding to the follow-up process as an owned action item. Due dates are never invented. */
 export async function createActionFromFinding(findingId: string, principal: Principal, db: PrismaClient = prisma, note?: string): Promise<string> {
-  assertCan(principal, "finding.decide");
-  const f = await loadFinding(db, findingId);
+  const f = await loadFinding(db, findingId, principal);
   const existing = await db.actionItem.findFirst({ where: { findingId, status: { in: ["OPEN", "IN_PROGRESS"] } } });
   if (existing) return existing.id;
   const actions = parseJson<RecommendedAction[]>(f.recommendedActions, []);

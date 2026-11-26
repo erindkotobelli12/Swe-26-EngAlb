@@ -6,7 +6,8 @@ import { READINESS_LEVELS } from "@/domain/types";
 import { audit } from "@/modules/audit";
 import { recomputeCase } from "@/modules/case/recompute";
 import { DecisionError } from "@/modules/detective/decisions";
-import { assertCan, type Principal } from "@/modules/permissions";
+import { changePhase } from "@/modules/phase/transition";
+import { assertAllowed, type Principal } from "@/modules/permissions";
 
 /**
  * The only path to a validated readiness level. Human Technical Lead only, with mandatory evidence links and comment.
@@ -21,8 +22,8 @@ export const ValidationSchema = z.object({
 });
 
 export async function recordValidation(input: z.infer<typeof ValidationSchema>, principal: Principal, db: PrismaClient = prisma): Promise<string> {
-  assertCan(principal, "validation.record");
   const data = ValidationSchema.parse(input);
+  await assertAllowed(principal, "validation.record", { employeeId: data.employeeId }, db);
   if (data.state === "APPROVED" && !data.validatedLevel) throw new DecisionError("Choose the readiness level you are validating.");
   if (data.state === "APPROVED" && ["UNKNOWN", "PRE_ONBOARDING", "BLOCKED"].includes(data.validatedLevel!)) throw new DecisionError("That level cannot be validated as readiness.");
   const caseRow = await db.onboardingCase.findUnique({ where: { employeeId: data.employeeId }, include: { employee: true } });
@@ -34,7 +35,7 @@ export async function recordValidation(input: z.infer<typeof ValidationSchema>, 
   }
   const v = await db.readinessValidation.create({
     data: {
-      caseId: caseRow.id, state: data.state, validatedLevel: data.state === "APPROVED" ? data.validatedLevel : null, reviewerRole: principal.role,
+      caseId: caseRow.id, state: data.state, validatedLevel: data.state === "APPROVED" ? data.validatedLevel : null, reviewerRole: "TECH_LEAD",
       reviewerName: principal.name, reviewerId: principal.userId, evidenceId: data.evidenceIds[0], evidenceIds: JSON.stringify(data.evidenceIds), comment: data.comment, timestamp: auditTimestamp(),
     },
   });
@@ -44,6 +45,10 @@ export async function recordValidation(input: z.infer<typeof ValidationSchema>, 
     before: { validatedStatus: caseRow.validatedStatus }, after: { state: data.state, validatedLevel: v.validatedLevel },
     evidenceIds: data.evidenceIds, details: `Technical validation: ${data.state.replaceAll("_", " ").toLowerCase()}${v.validatedLevel ? ` (${v.validatedLevel})` : ""} — ${data.comment}`,
   }, db);
+  // READY is reachable only here: a human Technical Lead's approved validation of independent readiness.
+  if (data.state === "APPROVED" && data.validatedLevel === "INDEPENDENTLY_READY") {
+    await changePhase(db, { employeeId: data.employeeId, to: "READY", reason: `Technical Lead validated independent readiness: ${data.comment}`, actor, allowedFrom: ["ONBOARDING"] });
+  }
   await recomputeCase(data.employeeId, `technical validation ${data.state.toLowerCase()}`, actor, db);
   return v.id;
 }

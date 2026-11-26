@@ -1,27 +1,21 @@
-import { EvidenceChip } from "./badges";
-import { RELIABILITY_LABEL, type Reliability } from "@/modules/reliability/classify";
+import { RELIABILITY_LABEL } from "@/lib/labels";
+import type { Reliability } from "@/modules/reliability/classify";
+import { Popover } from "./overlays";
+import { StatusPill, toneFor } from "./primitives";
+import { SourceChip } from "./provenance";
 
-const TONE: Record<Reliability["category"], string> = {
-  CONFLICTING: "bg-red-100 text-red-800 border-red-300",
-  INSUFFICIENT_EVIDENCE: "bg-slate-100 text-slate-700 border-slate-300",
-  OUTDATED: "bg-orange-50 text-orange-800 border-orange-300",
-  UNVERIFIED: "bg-amber-50 text-amber-800 border-amber-300",
-  WELL_SUPPORTED: "bg-sky-50 text-sky-800 border-sky-300",
-  VERIFIED: "bg-emerald-50 text-emerald-800 border-emerald-300",
-};
-
-/** Reliability badge with an expandable "Why?" listing each rule that fired and its sources. Separate from readiness. */
+/** Reliability (how trustworthy a status is, separate from readiness), with the rule's reasons one click away. */
 export default function ReliabilityBadge({ r, compact = false }: { r: Reliability; compact?: boolean }) {
   return (
-    <details className="group inline-block align-middle" data-reliability={r.category}>
-      <summary className={`inline-flex cursor-pointer list-none items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-bold ${TONE[r.category]}`}>
-        {compact ? "" : "Reliability: "}{RELIABILITY_LABEL[r.category]}<span className="font-normal underline">Why?</span>
-      </summary>
-      <div className="mt-1 max-w-sm rounded-lg border border-slate-200 bg-white p-2 text-xs text-slate-700 shadow-sm">
-        <ul className="list-disc space-y-0.5 pl-4">{r.reasons.map((x) => <li key={x}>{x}</li>)}</ul>
-        {r.sourceIds.length > 0 && <p className="mt-1">{r.sourceIds.map((id) => <EvidenceChip key={id} id={id} />)}</p>}
-        <p className="mt-1 text-[10px] text-slate-400">Deterministic rule (precedence: conflicting → insufficient → outdated → unverified → verified → well-supported).</p>
-      </div>
-    </details>
+    <Popover width={320} trigger={
+      <button type="button" data-reliability={r.category} className="rounded-full" aria-label={`Reliability: ${RELIABILITY_LABEL[r.category]}. Show why`}>
+        <StatusPill tone={toneFor.reliability(r.category)} dot={false}>{compact ? "" : "Reliability: "}{RELIABILITY_LABEL[r.category]}</StatusPill>
+      </button>
+    }>
+      <p className="font-medium text-ink">Why “{RELIABILITY_LABEL[r.category].toLowerCase()}”?</p>
+      <ul className="mt-2 list-disc space-y-1 pl-4 text-xs text-body">{r.reasons.map((x) => <li key={x}>{x}</li>)}</ul>
+      {r.sourceIds.length > 0 && <p className="mt-2">{r.sourceIds.map((id) => <SourceChip key={id} id={id} label={id.startsWith("TRACKER-") ? "Tracker entry" : "Source"} />)}</p>}
+      <p className="mt-2 text-[11px] text-subtle">A fixed rule checks, in order: conflicting, not enough evidence, out of date, unverified, verified, well supported.</p>
+    </Popover>
   );
 }

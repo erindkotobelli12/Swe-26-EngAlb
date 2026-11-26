@@ -9,7 +9,7 @@ import { audit, type Actor } from "@/modules/audit";
 import { loadCaseState } from "@/modules/case/loadCaseState";
 import { recomputeCase } from "@/modules/case/recompute";
 import { DecisionError } from "@/modules/detective/decisions";
-import { assertCan, type Principal } from "@/modules/permissions";
+import { assertAllowed, type Principal } from "@/modules/permissions";
 import { evaluateReadiness } from "@/modules/readiness/evaluate";
 
 const actorOf = (p: Principal): Actor => ({ userId: p.userId, label: p.name, role: p.role });
@@ -20,9 +20,9 @@ const actorOf = (p: Principal): Actor => ({ userId: p.userId, label: p.name, rol
  * records that the KT activity needs that access.
  */
 export async function confirmDependency(dependencyId: string, principal: Principal, db: PrismaClient = prisma): Promise<void> {
-  assertCan(principal, "dependency.decide");
   const dep = await db.dependency.findUnique({ where: { id: dependencyId } });
   if (!dep?.employeeId) throw new DecisionError("Unknown dependency.");
+  await assertAllowed(principal, "dependency.decide", { employeeId: dep.employeeId }, db);
   if (dep.status !== "PROPOSED") throw new DecisionError("Only proposed dependencies can be confirmed.");
   const now = auditTimestamp();
   const actor = actorOf(principal);
@@ -39,10 +39,10 @@ export async function confirmDependency(dependencyId: string, principal: Princip
 }
 
 export async function rejectDependency(dependencyId: string, reason: string, principal: Principal, db: PrismaClient = prisma): Promise<void> {
-  assertCan(principal, "dependency.decide");
   if (reason.trim().length < 3) throw new DecisionError("A reason is required to reject a dependency.");
   const dep = await db.dependency.findUnique({ where: { id: dependencyId } });
   if (!dep?.employeeId) throw new DecisionError("Unknown dependency.");
+  await assertAllowed(principal, "dependency.decide", { employeeId: dep.employeeId }, db);
   await db.dependency.update({ where: { id: dep.id }, data: { status: "REJECTED", confirmedBy: principal.name, confirmedAt: auditTimestamp() } });
   await audit({ actor: actorOf(principal), action: "DEPENDENCY_REJECTED", entityType: "Dependency", entityId: dep.id, employeeId: dep.employeeId, before: { status: dep.status }, after: { status: "REJECTED" }, details: `Rejected: ${reason.trim()}` }, db);
   await recomputeCase(dep.employeeId, "dependency rejected", actorOf(principal), db);
@@ -67,7 +67,7 @@ export type SuggestionResult = { ok: true; created: number; rejected: string[]; 
 
 /** Dependency Suggestion Agent: edges between existing access/KT nodes only, each with a verified excerpt. */
 export async function suggestDependencies(employeeId: string, principal: Principal, db: PrismaClient = prisma): Promise<SuggestionResult> {
-  assertCan(principal, "ai.run");
+  await assertAllowed(principal, "ai.run", { employeeId }, db);
   const state = await loadCaseState(employeeId, db);
   if (!state) throw new DecisionError("Unknown case.");
   const nodes = [

@@ -5,7 +5,11 @@ import { roleLabel, type CaseState, type EvidenceItem, type FindingItem } from "
 import { formatDate } from "@/lib/clock";
 import { parseJson } from "@/lib/json";
 import type { AIReview } from "@/modules/detective/investigate";
-import { EvidenceChip, FactOrAssumption, OriginBadge, ProvenanceBadge, SeverityBadge } from "@/components/ui/badges";
+import { EvidenceChip, FactOrAssumption, SeverityBadge } from "@/components/ui/badges";
+import { Drawer } from "@/components/ui/overlays";
+import { AiChip } from "@/components/ui/provenance";
+import { buttonClass, InternalId } from "@/components/ui/primitives";
+import { FINDING_CATEGORY_LABEL, FINDING_STATUS_LABEL, humanize } from "@/lib/labels";
 
 /** Renders verbatim source text with every cited excerpt highlighted. */
 export function Highlighted({ content, excerpts }: { content: string; excerpts: string[] }) {
@@ -18,7 +22,7 @@ export function Highlighted({ content, excerpts }: { content: string; excerpts: 
   ranges.forEach((r, i) => {
     if (r.start < cursor) return;
     parts.push(content.slice(cursor, r.start));
-    parts.push(<mark key={i} className="rounded bg-yellow-200 px-0.5">{content.slice(r.start, r.start + r.len)}</mark>);
+    parts.push(<mark key={i} className="rounded bg-amber-100 px-0.5">{content.slice(r.start, r.start + r.len)}</mark>);
     cursor = r.start + r.len;
   });
   parts.push(content.slice(cursor));
@@ -37,14 +41,14 @@ export function ConflictViewer({ finding, evidence }: { finding: FindingItem; ev
         const ev = items[0].ev;
         const authority = authorityFor(ev.senderRole, domain);
         return (
-          <article key={id} className="rounded-lg border border-slate-200 bg-slate-50/60 p-4">
+          <article key={id} className="rounded-lg border border-line bg-canvas/60 p-4">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <p className="text-xs font-bold text-slate-600">{id} · {ev.senderName ?? `${roleLabel(ev.senderRole)} (name not recorded)`} · {formatDate(ev.timestamp)}</p>
-              <span className={`rounded px-2 py-0.5 text-[11px] font-bold ${authority === "AUTHORITATIVE" ? "bg-emerald-100 text-emerald-800" : "bg-slate-200 text-slate-700"}`}>{AUTHORITY_LABEL[authority]}</span>
+              <p className="text-xs font-medium text-muted">{ev.title} · {ev.senderName ?? `${roleLabel(ev.senderRole)} (name not recorded)`} · {formatDate(ev.timestamp)}</p>
+              <span className={`rounded px-2 py-0.5 text-[11px] font-semibold ${authority === "AUTHORITATIVE" ? "bg-emerald-100 text-emerald-800" : "bg-slate-200 text-body"}`}>{AUTHORITY_LABEL[authority]}</span>
             </div>
-            <p className="mt-1 text-xs text-slate-500">Role: {roleLabel(ev.senderRole)}</p>
+            <p className="mt-1 text-xs text-subtle">Role: {roleLabel(ev.senderRole)}</p>
             <p className="mt-2 font-semibold">{items.map((i) => i.fact.statement).join(" ")}</p>
-            <blockquote className="mt-2 border-l-4 border-yellow-300 pl-3 text-sm leading-6 text-slate-700"><Highlighted content={ev.content} excerpts={items.map((i) => i.fact.excerpt)} /></blockquote>
+            <blockquote className="mt-2 border-l-4 border-amber-300 pl-3 text-sm leading-6 text-body"><Highlighted content={ev.content} excerpts={items.map((i) => i.fact.excerpt)} /></blockquote>
           </article>
         );
       })}
@@ -52,76 +56,78 @@ export function ConflictViewer({ finding, evidence }: { finding: FindingItem; ev
   );
 }
 
+/**
+ * A finding, calm by default: what is wrong, how serious, what to do next. Facts (with verbatim excerpts) and
+ * assumptions, the AI review and internal IDs are one click away in the details drawer.
+ */
 export default function FindingCard({ finding, state, actions, showCase }: { finding: FindingItem; state: CaseState; actions?: React.ReactNode; showCase?: boolean }) {
   const evidence = [...state.evidence, ...state.projectEvidence];
   const closed = finding.status === "RESOLVED" || finding.status === "DISMISSED";
   const review = parseJson<AIReview | null>(finding.aiAnalysis, null);
   return (
-    <article id={finding.id} data-finding-type={finding.type} className={`rounded-xl border bg-white p-5 ${finding.status === "PROPOSED" ? "border-dashed border-amber-300" : closed ? "border-slate-200 opacity-80" : "border-slate-200"}`}>
+    <article id={finding.id} data-finding-type={finding.type} className={`rounded-card border bg-surface p-5 shadow-soft ${finding.status === "PROPOSED" ? "border-dashed border-violet-300" : "border-line"} ${closed ? "opacity-80" : ""}`}>
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <SeverityBadge severity={finding.severity} />
-            <OriginBadge origin={finding.origin} />
-            <span className="rounded bg-slate-100 px-2 py-0.5 text-[11px] font-semibold uppercase text-slate-600">{finding.category.toLowerCase().replaceAll("_", " ")}</span>
-            {finding.status === "PROPOSED" ? <ProvenanceBadge state="proposed" /> : <span className="text-[11px] font-bold uppercase text-slate-400">{finding.status.toLowerCase()}</span>}
+            {finding.origin === "AI" && <AiChip note={finding.status === "PROPOSED" ? "Needs your decision" : "Accepted by a person"} />}
+            <span className="text-xs text-subtle">{FINDING_CATEGORY_LABEL[finding.category] ?? humanize(finding.category)}{finding.status !== "OPEN" ? ` · ${FINDING_STATUS_LABEL[finding.status]}` : ""}</span>
           </div>
-          <h3 className="mt-2 font-bold">{showCase && <Link href={`/employees/${state.employee.id}?tab=investigation#${finding.id}`} className="text-indigo-700 hover:underline">{state.employee.name}: </Link>}{finding.title}</h3>
-          <p className="mt-1 text-sm text-slate-600">{finding.description}</p>
+          <h3 className="mt-2 font-semibold text-ink">{showCase && <Link href={`/employees/${state.employee.id}?tab=investigation#${finding.id}`} className="text-brand-700 hover:underline">{state.employee.name}: </Link>}{finding.title}</h3>
+          <p className="mt-1 text-sm text-muted">{finding.description}</p>
         </div>
         {actions}
       </div>
 
       {finding.category === "CONFLICT" && finding.facts.length > 1 && <div className="mt-4"><ConflictViewer finding={finding} evidence={evidence} /></div>}
 
-      <div className="mt-4 grid gap-4 lg:grid-cols-2">
-        <div>
-          <p className="text-xs font-bold uppercase text-emerald-700">Confirmed facts</p>
-          <div className="mt-2 space-y-2">
-            {finding.facts.length ? finding.facts.map((f, i) => <FactOrAssumption key={i} kind="fact" statement={f.statement} evidenceId={f.evidenceId} excerpt={f.excerpt} />) : <p className="text-sm text-slate-500">No verbatim source supports this finding; it is based on a missing record.</p>}
-          </div>
-        </div>
-        <div>
-          <p className="text-xs font-bold uppercase text-amber-700">Assumptions and hypotheses</p>
-          <div className="mt-2 space-y-2">
-            {finding.assumptions.map((a, i) => <FactOrAssumption key={`a${i}`} kind="assumption" statement={a.statement} basis={a.basis} />)}
-            {finding.rootCauses.map((r, i) => <FactOrAssumption key={`r${i}`} kind="assumption" statement={`Root-cause hypothesis: ${r.hypothesis}`} basis={r.supportingEvidenceIds.length ? `Related sources: ${r.supportingEvidenceIds.join(", ")}` : "No supporting source cited"} />)}
-            {!finding.assumptions.length && !finding.rootCauses.length && <p className="text-sm text-slate-500">None recorded{finding.origin === "RULE" && !review ? ". Run the AI Detective for root-cause hypotheses." : "."}</p>}
-          </div>
-        </div>
-      </div>
+      {finding.recommendedActions.length > 0 && !closed && (
+        <ul className="mt-3 space-y-1.5">
+          {finding.recommendedActions.slice(0, 2).map((a, i) => (
+            <li key={i} className="flex items-start gap-2 text-sm"><ArrowRight size={15} className="mt-0.5 shrink-0 text-brand-500" /><span className="text-body">{a.action} <span className="text-xs text-subtle">· {roleLabel(a.ownerRole)}</span></span></li>
+          ))}
+        </ul>
+      )}
 
-      {review && (
-        <div className="mt-4 rounded-lg border border-dashed border-violet-300 bg-violet-50/40 p-3" data-testid="ai-review">
-          <div className="flex flex-wrap items-center gap-2 text-xs">
-            <OriginBadge origin="AI" /><ProvenanceBadge state="proposed" />
-            <b className="text-violet-900">Detective review: {review.verdict === "CONFIRMED" ? "confirmed" : review.verdict === "NOT_AN_ISSUE" ? "suggests this is not an issue — a human must decide" : "unsure"}</b>
-            <Link href={`/ai-activity#${review.aiRunId}`} className="text-violet-700 hover:underline">{review.model} · run {review.aiRunId.slice(-6)} · {new Date(review.at).toLocaleString("en-GB", { timeZone: "UTC" })} UTC</Link>
-          </div>
-          <p className="mt-2 text-sm text-slate-700">{review.explanation}</p>
-          {review.recommendedActions.length > 0 && (
-            <ul className="mt-2 space-y-1">{review.recommendedActions.map((a, i) => <li key={i} className="flex items-start gap-2 text-sm"><ArrowRight size={14} className="mt-0.5 shrink-0 text-violet-500" /><span>{a.action} <span className="inline-flex items-center gap-1 rounded bg-violet-100 px-1.5 text-xs font-semibold text-violet-800"><UserRound size={11} />{roleLabel(a.ownerRole)}</span></span></li>)}</ul>
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-line pt-3 text-xs text-subtle">
+        <span>Owner: {finding.ownerRole ? roleLabel(finding.ownerRole) : <span className="text-red-700">not recorded</span>}{finding.firstDetectedAt ? ` · first seen ${formatDate(finding.firstDetectedAt)}` : ""}</span>
+        <Drawer title={finding.title} description={`${state.employee.name} · ${FINDING_CATEGORY_LABEL[finding.category] ?? humanize(finding.category)}`}
+          trigger={<button type="button" className={buttonClass("ghost", "sm")} data-testid="finding-details">Facts and sources</button>}>
+          <section>
+            <h4 className="text-sm font-semibold text-ink">Facts</h4>
+            <p className="text-xs text-subtle">Each quoted word for word from a source.</p>
+            <div className="mt-2 space-y-2">
+              {finding.facts.length ? finding.facts.map((f, i) => <FactOrAssumption key={i} kind="fact" statement={f.statement} evidenceId={f.evidenceId} excerpt={f.excerpt} />) : <p className="text-sm text-subtle">No source supports this directly; it is based on a missing record.</p>}
+            </div>
+          </section>
+          <section className="mt-6">
+            <h4 className="text-sm font-semibold text-ink">Assumptions</h4>
+            <p className="text-xs text-subtle">Hypotheses that still need checking.</p>
+            <div className="mt-2 space-y-2">
+              {finding.assumptions.map((a, i) => <FactOrAssumption key={`a${i}`} kind="assumption" statement={a.statement} basis={a.basis} />)}
+              {finding.rootCauses.map((r, i) => <FactOrAssumption key={`r${i}`} kind="assumption" statement={`Possible cause: ${r.hypothesis}`} basis={r.supportingEvidenceIds.length ? `${r.supportingEvidenceIds.length} related source(s)` : "No supporting source cited"} />)}
+              {!finding.assumptions.length && !finding.rootCauses.length && <p className="text-sm text-subtle">None recorded.</p>}
+            </div>
+          </section>
+          {review && (
+            <section className="mt-6" data-testid="ai-review">
+              <h4 className="flex items-center gap-2 text-sm font-semibold text-ink">Detective review <AiChip model={review.model} at={review.at} note="A person decides" /></h4>
+              <p className="mt-1 text-sm text-body">{review.verdict === "CONFIRMED" ? "The AI agrees this is a real issue." : review.verdict === "NOT_AN_ISSUE" ? "The AI suggests this may not be an issue — a person must decide." : "The AI is unsure."} {review.explanation}</p>
+              {review.recommendedActions.length > 0 && <ul className="mt-2 space-y-1">{review.recommendedActions.map((a, i) => <li key={i} className="flex items-start gap-2 text-sm"><ArrowRight size={14} className="mt-0.5 shrink-0 text-violet-500" /><span>{a.action} <span className="inline-flex items-center gap-1 text-xs text-subtle"><UserRound size={11} />{roleLabel(a.ownerRole)}</span></span></li>)}</ul>}
+            </section>
           )}
-        </div>
-      )}
-
-      {finding.recommendedActions.length > 0 && (
-        <div className="mt-4">
-          <p className="text-xs font-bold uppercase text-slate-500">Recommended next actions</p>
-          <ul className="mt-2 space-y-1.5">
-            {finding.recommendedActions.map((a, i) => (
-              <li key={i} className="flex items-start gap-2 text-sm"><ArrowRight size={15} className="mt-0.5 shrink-0 text-indigo-500" /><span>{a.action} <span className="inline-flex items-center gap-1 rounded bg-indigo-50 px-1.5 text-xs font-semibold text-indigo-700"><UserRound size={11} />{roleLabel(a.ownerRole)}</span><span className="block text-xs text-slate-500">{a.rationale}</span></span></li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-slate-100 pt-3 text-xs text-slate-500">
-        <span>Owner: {finding.ownerRole ? roleLabel(finding.ownerRole) : <b className="text-red-600">not recorded</b>}</span>
-        {finding.firstDetectedAt && <span>First detected {formatDate(finding.firstDetectedAt)}</span>}
-        {finding.aiRunId && <Link href={`/ai-activity#${finding.aiRunId}`} className="font-semibold text-violet-700 hover:underline">AI run {finding.aiRunId.slice(-6)}</Link>}
-        {finding.evidenceIds.map((id) => <EvidenceChip key={id} id={id} />)}
-        {closed && <span className="w-full text-slate-600">{finding.status === "DISMISSED" ? "Dismissed" : "Resolved"} by {finding.resolvedBy ?? "unknown"} · {finding.resolutionType?.toLowerCase().replaceAll("_", " ")}{finding.resolution ? ` — ${finding.resolution}` : ""}</span>}
+          {finding.recommendedActions.length > 2 && (
+            <section className="mt-6">
+              <h4 className="text-sm font-semibold text-ink">All recommended actions</h4>
+              <ul className="mt-2 space-y-1.5">{finding.recommendedActions.map((a, i) => <li key={i} className="text-sm text-body">{a.action} <span className="text-xs text-subtle">· {roleLabel(a.ownerRole)} — {a.rationale}</span></li>)}</ul>
+            </section>
+          )}
+          {closed && <p className="mt-6 text-sm text-body">{finding.status === "DISMISSED" ? "Dismissed" : "Resolved"} by {finding.resolvedBy ?? "unknown"}{finding.resolutionType ? ` (${humanize(finding.resolutionType).toLowerCase()})` : ""}{finding.resolution ? `: ${finding.resolution}` : ""}</p>}
+          <div className="mt-6 border-t border-line pt-3 text-xs text-subtle">
+            <p>Sources: {finding.evidenceIds.length ? finding.evidenceIds.map((id) => <EvidenceChip key={id} id={id} label={evidence.find((e) => e.id === id)?.title} />) : "none"}</p>
+            <p className="mt-1">Finding <InternalId>{finding.id}</InternalId>{finding.aiRunId && <> · AI run <Link href={`/ai-activity#${finding.aiRunId}`} className="hover:underline"><InternalId>{finding.aiRunId.slice(-8)}</InternalId></Link></>}</p>
+          </div>
+        </Drawer>
       </div>
     </article>
   );

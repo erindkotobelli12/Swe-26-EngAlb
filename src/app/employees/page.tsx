@@ -1,5 +1,8 @@
+import { PageHeader } from "@/components/ui/PageHeader";
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
+import { getScope } from "@/server/principal";
+import { visibleEmployeeIds } from "@/modules/permissions";
 import { formatDate } from "@/lib/clock";
 import { loadPortfolio } from "@/modules/case/portfolio";
 import { levelLabel } from "@/modules/readiness/evaluate";
@@ -8,14 +11,10 @@ import EmployeeDirectory from "@/components/EmployeeDirectory";
 export default async function EmployeesPage() {
   const session = await getSession();
   if (session.role === "EMPLOYEE") redirect("/workspace");
-  const portfolio = await loadPortfolio();
+  const portfolio = await loadPortfolio(undefined, visibleEmployeeIds(await getScope()));
   return (
-    <div className="px-5 py-6 md:px-8">
-      <header>
-        <p className="text-sm text-slate-500">Onboarding portfolio</p>
-        <h1 className="mt-1 text-2xl font-bold">Employees</h1>
-        <p className="mt-2 text-sm text-slate-600">Search cases, compare reported and assessed readiness, and open an employee case.</p>
-      </header>
+    <div className="">
+      <PageHeader title="People" subtitle="Everyone you work with. Compare reported and assessed readiness and open a case." breadcrumbs={[{ label: "People" }]} />
       <EmployeeDirectory
         employees={portfolio
           .sort((a, b) => a.state.employee.name.localeCompare(b.state.employee.name))

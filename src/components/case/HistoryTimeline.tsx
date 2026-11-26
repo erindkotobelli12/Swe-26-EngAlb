@@ -1,4 +1,5 @@
 "use client";
+import { label, humanize } from "@/lib/labels";
 import { useMemo, useState } from "react";
 import { History } from "lucide-react";
 
@@ -25,23 +26,23 @@ export default function HistoryTimeline({ entries }: { entries: AuditEntry[] }) 
   return (
     <div>
       <div className="mb-3 flex flex-wrap items-center gap-2">
-        <label className="text-sm text-slate-600">Entity
-          <select aria-label="Filter history by entity" value={filter} onChange={(e) => setFilter(e.target.value)} className="ml-2 rounded-lg border px-2 py-1 text-sm">
+        <label className="text-sm text-muted">Entity
+          <select aria-label="Filter history by entity" value={filter} onChange={(e) => setFilter(e.target.value)} className="ml-2 rounded-lg border border-line-strong bg-surface px-2 py-1 text-sm">
             <option value="ALL">All ({entries.length})</option>
             {types.map((t) => <option key={t} value={t}>{t}</option>)}
           </select>
         </label>
       </div>
-      {shown.length === 0 ? <p className="text-sm text-slate-500">No history entries.</p> : (
-        <ol className="relative space-y-3 border-l-2 border-slate-200 pl-5">
+      {shown.length === 0 ? <p className="text-sm text-subtle">No history entries.</p> : (
+        <ol className="relative space-y-3 border-l-2 border-line pl-5">
           {shown.map((e) => (
             <li key={e.id} className="relative">
-              <span className="absolute -left-[27px] top-1 grid h-4 w-4 place-items-center rounded-full bg-white ring-2 ring-indigo-300"><History size={9} className="text-indigo-600" /></span>
-              <div className="rounded-lg border border-slate-200 bg-white p-3">
-                <div className="flex flex-wrap items-center justify-between gap-2 text-xs"><b className="text-slate-800">{e.action.replaceAll("_", " ").toLowerCase()}</b><span className="text-slate-500">{new Date(e.timestamp).toLocaleString("en-GB", { timeZone: "UTC" })} UTC · {e.actor}</span></div>
-                <p className="mt-1 text-sm text-slate-700">{e.details}</p>
-                {(e.before || e.after) && e.action !== "PIPELINE_RUN" && <p className="mt-1 text-xs text-slate-500"><span className="text-red-700">before</span> {pretty(e.before)} → <span className="text-emerald-700">after</span> {pretty(e.after)}</p>}
-                <p className="mt-1 text-[11px] text-slate-400">{e.entityType} {e.entityId}{e.evidenceIds.length ? ` · evidence ${e.evidenceIds.join(", ")}` : ""}</p>
+              <span className="absolute -left-[27px] top-1 grid h-4 w-4 place-items-center rounded-full bg-white ring-2 ring-indigo-300"><History size={9} className="text-brand-700" /></span>
+              <div className="rounded-lg border border-line bg-white p-3">
+                <div className="flex flex-wrap items-center justify-between gap-2 text-xs"><span className="font-medium text-ink">{label("audit", e.action)}</span><span className="text-subtle">{new Date(e.timestamp).toLocaleString("en-GB", { timeZone: "UTC" })} UTC · {e.actor}</span></div>
+                <p className="mt-1 text-sm text-body">{e.details}</p>
+                {(e.before || e.after) && e.action !== "PIPELINE_RUN" && <p className="mt-1 text-xs text-subtle"><span className="text-red-700">before</span> {pretty(e.before)} → <span className="text-emerald-700">after</span> {pretty(e.after)}</p>}
+                <p className="mt-1 text-[11px] text-subtle">{e.entityType} {e.entityId}{e.evidenceIds.length ? ` · evidence ${e.evidenceIds.join(", ")}` : ""}</p>
               </div>
             </li>
           ))}

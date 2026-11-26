@@ -7,10 +7,32 @@ import * as prompt from "@/ai/prompts/briefing";
 import { audit } from "@/modules/audit";
 import { loadPortfolio } from "@/modules/case/portfolio";
 import { loadFollowUpQueue } from "@/modules/followups/service";
-import { assertCan, type Principal } from "@/modules/permissions";
+import { assertAllowed, heldRoles, type Principal, type Scope } from "@/modules/permissions";
+import { DecisionError } from "@/modules/detective/decisions";
+import { loadPreboarding } from "@/modules/preboarding/queries";
+import { thresholds } from "@/config/thresholds";
 import { selectBriefing, snapshotOf, type BriefingRole, type Section, type Snapshot, type Statement } from "./select";
 
-export const BRIEFING_ROLES: BriefingRole[] = ["PMO", "TECH_LEAD", "MANAGEMENT", "LINE_MANAGER"];
+export const BRIEFING_ROLES: BriefingRole[] = ["PMO", "ADDITIONAL_MANAGER", "LINE_MANAGER", "TECH_LEAD", "HR"];
+
+/** Briefing variants a user may generate: one per role they hold (never another role's variant). */
+export function briefingRolesFor(scope: Scope): BriefingRole[] {
+  const held = heldRoles(scope);
+  return BRIEFING_ROLES.filter((r) => held.includes(r));
+}
+
+/** Cases a briefing covers: the PMO's whole portfolio, otherwise only the cases in the author's scope (optionally one project). */
+function inScope(scope: Scope, role: BriefingRole, projectId?: string | null) {
+  return (c: { state: { employee: { id: string; projectId: string | null } } }) => {
+    if (projectId && c.state.employee.projectId !== projectId) return false;
+    if (role === "PMO") return scope.isPMO;
+    const rel = scope.cases[c.state.employee.id]?.relations ?? [];
+    if (role === "HR") return rel.includes("HR");
+    if (role === "ADDITIONAL_MANAGER") return rel.includes("AM");
+    if (role === "LINE_MANAGER") return rel.includes("LM");
+    return rel.includes("TL");
+  };
+}
 
 /** A statement is valid only if every ref exists in the deterministic selection for that section. */
 export function validateStatements(statements: Statement[], allowedRefs: Set<string>): { valid: Statement[]; rejected: number } {
@@ -23,17 +45,31 @@ export function validateStatements(statements: Statement[], allowedRefs: Set<str
   return { valid, rejected };
 }
 
-export async function generateBriefing(role: BriefingRole, principal: Principal, db: PrismaClient = prisma): Promise<string> {
-  assertCan(principal, "briefing.generate");
-  const [portfolio, queue, actions, previousRow] = await Promise.all([
+export async function generateBriefing(role: BriefingRole, principal: Principal, db: PrismaClient = prisma, opts: { projectId?: string | null } = {}): Promise<string> {
+  const scope = await assertAllowed(principal, "briefing.generate", {}, db);
+  if (!briefingRolesFor(scope).includes(role)) throw new DecisionError("You can only generate the briefing for a role you hold.");
+  if (opts.projectId) await assertAllowed(principal, "project.view", { projectId: opts.projectId }, db);
+  const keep = inScope(scope, role, opts.projectId);
+  const [allCases, queue, actions, previousRow] = await Promise.all([
     loadPortfolio(db),
-    loadFollowUpQueue(db),
+    loadFollowUpQueue(db, scope),
     db.actionItem.findMany({ where: { status: { in: ["OPEN", "IN_PROGRESS"] } }, include: { employee: true } }),
-    db.briefing.findFirst({ where: { role }, orderBy: { generatedAt: "desc" } }),
+    db.briefing.findFirst({ where: { role, scopeKey: scopeKeyOf(opts.projectId), generatedById: principal.userId }, orderBy: { generatedAt: "desc" } }),
   ]);
+  const portfolio = allCases.filter(keep);
+  const ids = new Set(portfolio.map((c) => c.state.employee.id));
+  const groups = queue.groups.map((g) => ({ ...g, items: g.items.filter((i) => ids.has(i.employeeId)) })).filter((g) => g.items.length);
   const evaluationDate = getEvaluationDate();
   const previous = previousRow ? { snapshot: parseJson<Snapshot>(previousRow.snapshotJson, { levels: {}, openFindings: {}, resolved: [] }), generatedAt: previousRow.generatedAt } : null;
-  const deterministic = selectBriefing(role, portfolio, queue.groups, actions.map((a) => ({ id: a.id, employeeName: a.employee?.name ?? "Unknown", title: a.title, dueDate: a.dueDate, ownerRole: a.ownerRole })), previous, evaluationDate);
+  const extra: Record<string, Statement[]> = {};
+  if (role === "HR") {
+    // HR variant: the pre-boarding pipeline and start dates at risk (refs point at the case).
+    const rows = (await loadPreboarding(scope, db)).filter((r) => !opts.projectId || r.projectId === opts.projectId);
+    extra.pipeline = rows.map((r) => ({ text: `${r.name}${r.projectName ? ` (${r.projectName})` : ""}: ${r.done} of ${r.total} pre-boarding items done; ${r.hrOpen} HR item(s) open${r.blocked.length ? `; ${r.blocked.length} blocked` : ""}.`, refs: [`case:${r.employeeId}`] }));
+    extra.startDates = rows.filter((r) => r.daysToStart <= thresholds.UPCOMING_START_DAYS && (r.hrOpen > 0 || r.blocked.length > 0 || r.missingContacts.length > 0))
+      .map((r) => ({ text: `${r.name} ${r.daysToStart >= 0 ? `starts in ${r.daysToStart} day(s)` : `started ${-r.daysToStart} day(s) ago`} with ${r.total - r.done} open item(s)${r.missingContacts.length ? `; no ${r.missingContacts.join(" or ")}` : ""}.`, refs: [`case:${r.employeeId}`] }));
+  }
+  const deterministic = selectBriefing(role, portfolio, groups, actions.filter((a) => a.employeeId && ids.has(a.employeeId)).map((a) => ({ id: a.id, employeeName: a.employee?.name ?? "Unknown", title: a.title, dueDate: a.dueDate, ownerRole: a.ownerRole })), previous, evaluationDate, extra);
 
   const outcome = await runAgent({
     agent: "briefing", promptVersion: prompt.PROMPT_VERSION, input: { role, deterministic }, inputRefs: [...new Set(deterministic.flatMap((s) => s.statements.flatMap((x) => x.refs)))].slice(0, 200),
@@ -53,7 +89,7 @@ export async function generateBriefing(role: BriefingRole, principal: Principal,
   }
   const row = await db.briefing.create({
     data: {
-      role, generatedAt: auditTimestamp(), generatedBy: principal.name, evaluationDate, sectionsJson: toJson(sections), snapshotJson: toJson(snapshotOf(portfolio)),
+      role, scopeKey: scopeKeyOf(opts.projectId), generatedAt: auditTimestamp(), generatedBy: principal.name, generatedById: principal.userId, evaluationDate, sectionsJson: toJson(sections), snapshotJson: toJson(snapshotOf(portfolio)),
       narrativeSource: outcome.ok && sections.some((s) => s.source === "AI") ? "AI" : "DETERMINISTIC", aiRunId: outcome.run.id, aiError: outcome.ok ? null : outcome.error, rejectedCount: rejected,
     },
   });
@@ -61,8 +97,11 @@ export async function generateBriefing(role: BriefingRole, principal: Principal,
   return row.id;
 }
 
-export async function listBriefings(role: BriefingRole, db: PrismaClient = prisma) {
-  return db.briefing.findMany({ where: { role }, orderBy: { generatedAt: "desc" }, take: 20 });
+export const scopeKeyOf = (projectId?: string | null) => (projectId ? `project:${projectId}` : "ALL");
+
+/** A user's own briefings for one role and scope (whole scope or one project). */
+export async function listBriefings(role: BriefingRole, userId: string, projectId?: string | null, db: PrismaClient = prisma) {
+  return db.briefing.findMany({ where: { role, generatedById: userId, scopeKey: scopeKeyOf(projectId) }, orderBy: { generatedAt: "desc" }, take: 20 });
 }
 
 export function toMarkdown(b: { role: string; generatedAt: string; evaluationDate: string; narrativeSource: string; sectionsJson: string }): string {

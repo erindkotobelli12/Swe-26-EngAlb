@@ -10,7 +10,7 @@ import * as detective from "@/ai/prompts/detective";
 import { audit, type Actor } from "@/modules/audit";
 import { loadCaseState } from "@/modules/case/loadCaseState";
 import { findingId } from "@/modules/case/recompute";
-import { assertCan, type Principal } from "@/modules/permissions";
+import { assertAllowed, type Principal } from "@/modules/permissions";
 import { severityForAIFinding, type FindingCategory } from "./types";
 
 export type InvestigationSummary =
@@ -31,7 +31,7 @@ const READINESS_HINT = /readiness|ready|independ|complete|closed|kt|scenario|val
  *  - stores new findings as PROPOSED (never OPEN) and never changes readiness, evidence or rule-finding status.
  */
 export async function investigateCase(employeeId: string, principal: Principal, db: PrismaClient = prisma): Promise<InvestigationSummary> {
-  assertCan(principal, "ai.run");
+  await assertAllowed(principal, "ai.run", { employeeId }, db);
   const state = await loadCaseState(employeeId, db);
   if (!state) throw new Error("Unknown case");
   const sources = [...state.evidence, ...state.projectEvidence].filter((e) => e.reviewStatus !== "REJECTED");

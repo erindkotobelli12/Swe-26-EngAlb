@@ -1,32 +1,20 @@
 "use client";
-import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
 import { FileText, Loader2, Printer } from "lucide-react";
 import { generateBriefingAction } from "@/server/actions/briefing";
-import { ErrorBox } from "@/components/ui/badges";
+import { useServerAction } from "@/components/ui/actions";
+import { buttonClass } from "@/components/ui/primitives";
 
-export function GenerateBriefingButton({ role }: { role: string }) {
-  const router = useRouter();
-  const [pending, start] = useTransition();
-  const [error, setError] = useState("");
-  function go() {
-    setError("");
-    start(async () => {
-      const r = await generateBriefingAction(role);
-      if (!r.ok) return setError(r.error);
-      router.push(`/briefing?role=${role}&id=${r.data}`);
-      router.refresh();
-    });
-  }
+export function GenerateBriefingButton({ role, projectId, label = "Generate briefing", variant = "primary" }: { role: string; projectId?: string | null; label?: string; variant?: "primary" | "secondary" }) {
+  const { pending, run } = useServerAction();
   return (
-    <div className="no-print space-y-2">
-      <button type="button" disabled={pending} onClick={go} className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-bold text-white disabled:opacity-60">{pending ? <Loader2 size={15} className="animate-spin" /> : <FileText size={15} />}{pending ? "Selecting facts and writing narrative…" : "Generate briefing"}</button>
-      {pending && <p role="status" className="text-xs text-slate-500">Facts are selected by rules; the local model only rewrites them. If it is unavailable, the deterministic statements are kept.</p>}
-      {error && <ErrorBox message={error} onRetry={go} />}
-    </div>
+    <button type="button" data-testid="generate-briefing" disabled={pending} className={`no-print ${buttonClass(variant)}`}
+      onClick={() => run(() => generateBriefingAction(role, projectId ?? null), { success: "Briefing generated." })}>
+      {pending ? <Loader2 size={15} className="animate-spin" /> : <FileText size={15} />}
+      {pending ? "Writing briefing…" : label}
+    </button>
   );
 }
 
 export function PrintButton() {
-  return <button type="button" onClick={() => window.print()} className="no-print inline-flex items-center gap-1 rounded-md border px-3 py-1.5 text-xs font-bold"><Printer size={13} />Print / save as PDF</button>;
+  return <button type="button" onClick={() => window.print()} className={`no-print ${buttonClass("ghost", "sm")}`}><Printer size={14} />Print or save as PDF</button>;
 }

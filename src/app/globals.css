@@ -1,20 +1,81 @@
 @import "tailwindcss";
 
-:root { --navy: #172033; --blue: #315efb; }
-* { box-sizing: border-box; }
-body { margin: 0; background: #f5f7fb; color: var(--navy); }
-button, input, select, textarea { font: inherit; }
+/*
+ * OnboardIQ design tokens. One calm, neutral palette with a single brand accent.
+ * Status colours are reserved for status: green = ready / on track, amber = at risk,
+ * red = blocked / critical, slate = unknown, violet = simulated or sample data.
+ */
+@theme {
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 
-/* Simulated data: a distinct, persistent striped purple treatment. */
-.sim-stripes {
-  background-image: repeating-linear-gradient(135deg, #f5f3ff 0 8px, #ede9fe 8px 16px);
+  --color-canvas: #f7f8fa;
+  --color-surface: #ffffff;
+  --color-line: #e4e7ec;
+  --color-line-strong: #d0d5dd;
+  --color-ink: #101828;
+  --color-body: #344054;
+  --color-muted: #475467;
+  --color-subtle: #667085;
+
+  --color-brand-50: #eef3ff;
+  --color-brand-100: #dfe8ff;
+  --color-brand-200: #c3d3fe;
+  --color-brand-500: #4a6cf7;
+  --color-brand-600: #3451d1;
+  --color-brand-700: #2a40a8;
+
+  --radius-card: 12px;
+  --shadow-soft: 0 1px 2px rgba(16, 24, 40, 0.04), 0 1px 3px rgba(16, 24, 40, 0.05);
+  --shadow-pop: 0 12px 32px -8px rgba(16, 24, 40, 0.18), 0 4px 8px -4px rgba(16, 24, 40, 0.08);
 }
-.sim-banner {
-  background-image: repeating-linear-gradient(135deg, #6d28d9 0 14px, #7c3aed 14px 28px);
+
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--color-canvas);
+  color: var(--color-ink);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
 }
+button, input, select, textarea { font: inherit; color: inherit; }
+
+/* Visible focus rings everywhere (keyboard users). */
+:where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+  outline: 2px solid var(--color-brand-500);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+.tabular { font-variant-numeric: tabular-nums; }
+
+/* Shared form controls (in the components layer so utilities such as pl-9 can still override them). */
+@layer components {
+  .field {
+    width: 100%;
+    border: 1px solid var(--color-line-strong);
+    border-radius: 8px;
+    background: var(--color-surface);
+    padding: 7px 10px;
+    font-size: 14px;
+    line-height: 1.4;
+  }
+  .field:focus { outline: 2px solid var(--color-brand-200); border-color: var(--color-brand-500); }
+  .field:disabled { background: var(--color-canvas); color: var(--color-subtle); }
+  .label { display: block; font-size: 12px; font-weight: 600; color: var(--color-body); margin-bottom: 4px; }
+}
+
+/* Simulator banner only: a slim, calm stripe. */
+.sim-banner { background-image: repeating-linear-gradient(135deg, #6d28d9 0 14px, #7c3aed 14px 28px); }
+.sim-stripes { background: #f5f3ff; }
+
+@keyframes toast-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+.toast-in { animation: toast-in 160ms ease-out; }
 
 @media print {
-  aside, nav, .no-print { display: none !important; }
-  main { padding: 0 !important; }
+  aside, nav, header, .no-print { display: none !important; }
+  main { padding: 0 !important; max-width: none !important; }
   body { background: white; }
 }

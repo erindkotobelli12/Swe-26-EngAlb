@@ -1,38 +1,75 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/db";
-import { getSession } from "@/lib/auth";
-import { parseJson } from "@/lib/json";
+import { formatDate } from "@/lib/clock";
+import { label, humanize } from "@/lib/labels";
+import { can } from "@/modules/permissions";
+import { getScope } from "@/server/principal";
 import { getLLMStatus } from "@/ai/providers";
-import { Card, EmptyState } from "@/components/ui/badges";
+import { PageHeader } from "@/components/ui/PageHeader";
+import { Card, EmptyState, InternalId, LinkTabs, StatusPill } from "@/components/ui/primitives";
 
-/** AI transparency log: every agent call with model, prompt version, input IDs, status and output. */
-export default async function AIActivityPage() {
-  const session = await getSession();
-  if (session.role === "EMPLOYEE" || session.role === "LINE_MANAGER") redirect("/dashboard");
-  const [runs, status] = await Promise.all([prisma.aIRun.findMany({ orderBy: { createdAt: "desc" }, take: 100 }), getLLMStatus()]);
+/**
+ * Audit & AI log. The audit log records every change with who, when, before and after; the AI log records every agent
+ * call (model, prompt version, input IDs, outcome). PMO sees everything; a Technical Lead sees entries for their cases.
+ */
+export default async function AuditPage({ searchParams }: { searchParams: Promise<{ tab?: string }> }) {
+  const scope = await getScope();
+  if (!can(scope, "audit.view")) redirect("/");
+  const tab = (await searchParams).tab === "ai" ? "ai" : "audit";
+  const ids = Object.keys(scope.cases);
+  const where = scope.isPMO ? {} : { employeeId: { in: ids } };
+  const [entries, runs, status, names] = await Promise.all([
+    prisma.auditLog.findMany({ where: { ...where, action: { not: "STATE_RECOMPUTED" } }, orderBy: { timestamp: "desc" }, take: 150 }),
+    tab === "ai" ? prisma.aIRun.findMany({ where: scope.isPMO ? {} : { OR: [{ employeeId: { in: ids } }, { employeeId: null }] }, orderBy: { createdAt: "desc" }, take: 100 }) : Promise.resolve([]),
+    tab === "ai" ? getLLMStatus() : Promise.resolve(null),
+    prisma.employee.findMany({ select: { id: true, name: true } }),
+  ]);
+  const nameOf = new Map(names.map((n) => [n.id, n.name]));
+
   return (
-    <div className="px-5 py-6 md:px-8">
-      <header>
-        <p className="text-sm text-slate-500">Transparency log</p>
-        <h1 className="mt-1 text-2xl font-bold">AI activity</h1>
-        <p className="mt-2 max-w-3xl text-sm text-slate-600">Every call to the local model is logged with its agent, model, prompt version, the IDs it was given (never full data dumps), the raw validated output and the outcome. Failed calls are shown, never hidden or replaced with scripted output.</p>
-      </header>
-      <div className="mt-4"><Card title="Local model">
-        <p className="text-sm">{status.available ? `Ready: ${status.model} via local Ollama (loopback only — data never leaves this machine).` : status.message}</p>
-      </Card></div>
-      <div className="mt-4 space-y-3">
-        {runs.length ? runs.map((r) => (
-          <details key={r.id} id={r.id} className="scroll-mt-6 rounded-xl border border-slate-200 bg-white p-4">
-            <summary className="flex cursor-pointer flex-wrap items-center justify-between gap-2 text-sm">
-              <span><b className="capitalize">{r.agent.replaceAll("_", " ")}</b> · {r.model} · {r.promptVersion}{r.employeeId ? ` · ${r.employeeId}` : ""}</span>
-              <span className="flex items-center gap-3 text-xs"><span className={r.status === "OK" ? "font-bold text-emerald-700" : "font-bold text-red-700"}>{r.status}</span><span className="text-slate-500">{(r.durationMs / 1000).toFixed(1)} s · {new Date(r.createdAt).toLocaleString("en-GB", { timeZone: "UTC" })} UTC</span></span>
-            </summary>
-            <p className="mt-2 text-xs text-slate-500">Run {r.id} · input hash {r.inputHash.slice(0, 12)} · input IDs: {parseJson(r.inputRefs, [] as string[]).join(", ") || "none"}</p>
-            {r.error && <p className="mt-2 rounded bg-red-50 p-2 text-xs text-red-800">{r.error}</p>}
-            {r.output && <pre className="mt-2 max-h-80 overflow-auto rounded bg-slate-900 p-3 text-xs text-slate-100">{JSON.stringify(JSON.parse(r.output), null, 2)}</pre>}
-          </details>
-        )) : <EmptyState title="No AI runs yet">Agents run only on explicit user actions such as Investigate, Extract claims or Draft follow-ups.</EmptyState>}
-      </div>
-    </div>
+    <>
+      <PageHeader title="Audit & AI log" subtitle="Every change with who, when and what it was before and after; every AI call with its model and outcome." breadcrumbs={[{ label: "Audit & AI log" }]} />
+      <div className="mb-6"><LinkTabs current={tab} tabs={[{ id: "audit", label: "Changes", href: "/ai-activity" }, { id: "ai", label: "AI calls", href: "/ai-activity?tab=ai" }]} /></div>
+
+      {tab === "audit" && (entries.length ? (
+        <Card padded={false}>
+          <ul className="divide-y divide-line">
+            {entries.map((e) => (
+              <li key={e.id} className="px-5 py-3 text-sm">
+                <details>
+                  <summary className="flex cursor-pointer list-none flex-wrap items-baseline justify-between gap-2">
+                    <span><span className="font-medium text-ink">{label("audit", e.action)}</span>{e.employeeId && <> · <Link href={`/employees/${e.employeeId}?tab=history`} className="text-brand-700 hover:underline">{nameOf.get(e.employeeId) ?? "Case"}</Link></>}<span className="block text-muted">{e.details}</span></span>
+                    <span className="text-xs text-subtle">{e.actorLabel ?? "Unknown"} · {formatDate(e.timestamp)}</span>
+                  </summary>
+                  <div className="mt-2 grid gap-2 text-xs md:grid-cols-2">
+                    {e.before && <pre className="overflow-auto rounded-md bg-canvas p-2 text-muted">Before: {e.before}</pre>}
+                    {e.after && <pre className="overflow-auto rounded-md bg-canvas p-2 text-muted">After: {e.after}</pre>}
+                    <p className="text-subtle md:col-span-2"><InternalId>{e.entityType} {e.entityId}</InternalId></p>
+                  </div>
+                </details>
+              </li>
+            ))}
+          </ul>
+        </Card>
+      ) : <EmptyState title="No changes recorded yet." />)}
+
+      {tab === "ai" && (
+        <div className="space-y-3">
+          <Card title="Local model"><p className="text-sm text-body">{status?.available ? `Ready: ${status.model} via local Ollama. Data never leaves this machine.` : status?.message}</p></Card>
+          {runs.length ? runs.map((r) => (
+            <details key={r.id} id={r.id} className="scroll-mt-20 rounded-card border border-line bg-surface p-4 shadow-soft">
+              <summary className="flex cursor-pointer list-none flex-wrap items-center justify-between gap-2 text-sm">
+                <span><span className="font-medium text-ink">{humanize(r.agent)}</span><span className="text-muted"> · {r.model}{r.employeeId ? ` · ${nameOf.get(r.employeeId) ?? "case"}` : ""}</span></span>
+                <span className="flex items-center gap-2 text-xs text-subtle"><StatusPill tone={r.status === "OK" || r.status === "SUCCESS" ? "green" : r.status === "CACHED" ? "slate" : "red"} dot={false}>{humanize(r.status)}</StatusPill>{formatDate(r.createdAt)} · {r.durationMs} ms</span>
+              </summary>
+              <p className="mt-2 text-xs text-subtle">Prompt <InternalId>{r.promptVersion}</InternalId> · run <InternalId>{r.id}</InternalId> · inputs <InternalId>{r.inputRefs}</InternalId></p>
+              {r.error && <p className="mt-2 rounded-md bg-red-50 p-2 text-xs text-red-800">{r.error}</p>}
+              {r.output && <pre className="mt-2 max-h-80 overflow-auto rounded-md bg-slate-900 p-3 text-xs text-slate-100">{JSON.stringify(JSON.parse(r.output), null, 2)}</pre>}
+            </details>
+          )) : <EmptyState title="No AI calls yet.">Agents run only when someone asks, for example Investigate or Draft follow-ups.</EmptyState>}
+        </div>
+      )}
+    </>
   );
 }
