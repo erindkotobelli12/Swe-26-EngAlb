@@ -1,4 +1,4 @@
-﻿import { existsSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { PrismaClient } from "@prisma/client";
 import { ACCESS, CASES, CLAIMS, EVIDENCE, KT, PROJECTS, ROLE_ONLY_PEOPLE, lineManagerId, trackerContent } from "./seed-data/official";
 
@@ -54,9 +54,9 @@ async function main() {
       await prisma.onboardingCase.create({ data: { id: `CASE-${c.id}`, employeeId: c.id, ktOwnerId: c.project === "Orion" ? "P-TL-ORION" : null } });
       await prisma.evidence.create({
         data: {
-          id: `TRACKER-${c.id}`, title: `Onboarding tracker entry Â· ${c.id}`, sourceType: "TRACKER", author: null, senderRole: "TRACKER",
+          id: `TRACKER-${c.id}`, title: `Onboarding tracker entry · ${c.id}`, sourceType: "TRACKER", author: null, senderRole: "TRACKER",
           authorityLevel: "TRACKER", recipients: "[]", timestamp: c.lastIso, content: trackerContent(c), employeeId: c.id,
-          projectId: c.project ? c.project.toUpperCase() : null, caseId: `CASE-${c.id}`, sourceRef: "Starter pack Â§4", reviewStatus: "APPROVED", ingestedAt: "2026-10-14", ingestedBy: "seed",
+          projectId: c.project ? c.project.toUpperCase() : null, caseId: `CASE-${c.id}`, sourceRef: "Starter pack §4", reviewStatus: "APPROVED", ingestedAt: "2026-10-14", ingestedBy: "seed",
         },
       });
     }
@@ -95,7 +95,7 @@ async function main() {
 
     await prisma.knowledgeResource.create({
       data: {
-        id: "RES-ATLAS", title: "Atlas training guide and runbook (reference only)", projectId: "ATLAS", owner: "KT Owner â€” Atlas (name not recorded)",
+        id: "RES-ATLAS", title: "Atlas training guide and runbook (reference only)", projectId: "ATLAS", owner: "KT Owner — Atlas (name not recorded)",
         description: "Project-owned documents. Only the folder reference is stored; the documents must not be copied outside that location.",
         location: "/Team/Operations/Onboarding", applicableRoles: "[]", copyAllowed: false, sourceEvidenceId: "EMAIL-008",
       },
@@ -103,7 +103,7 @@ async function main() {
 
     const summaries = await recomputeAll("seed", SYSTEM_ACTOR, prisma);
     await audit({ actor: SYSTEM_ACTOR, action: "SEED_COMPLETE", entityType: "SYSTEM", entityId: "ONBOARDIQ", details: `Seeded ${CASES.length} official cases, ${EVIDENCE.length} verbatim evidence sources and ${CLAIMS.length} transcribed claims; recomputed ${summaries.length} cases.` }, prisma);
-    for (const s of summaries) console.log(`${s.employeeId}: ${s.levelAfter} Â· ${s.findingsOpened.length} findings`);
+    for (const s of summaries) console.log(`${s.employeeId}: ${s.levelAfter} · ${s.findingsOpened.length} findings`);
   } finally {
     await prisma.$disconnect();
   }
