@@ -25,7 +25,7 @@ export const FINDING_TYPES = [
   "CONFLICTING_EVIDENCE", "SEMANTIC_CONTRADICTION", "BLOCKED_WITHOUT_CAUSE", "CLOSURE_WITHOUT_EVIDENCE",
   "STATUS_EVIDENCE_MISMATCH", "UNANSWERED_REQUEST", "ACCESS_NOT_USABLE", "ACCESS_OWNER_UNKNOWN", "MISSING_PROJECT",
   "MISSING_LINE_MANAGER", "KT_WITHOUT_OWNER", "MISSING_READINESS_DATE", "STALE_STATUS", "UNVERIFIED_SELF_REPORT",
-  "INSUFFICIENT_EVIDENCE", "OTHER",
+  "INSUFFICIENT_EVIDENCE", "AI_OBSERVATION", "OTHER",
 ] as const;
 export type FindingType = (typeof FINDING_TYPES)[number];
 
@@ -49,6 +49,7 @@ export const TYPE_META: Record<FindingType, { category: FindingCategory; severit
   STALE_STATUS: { category: "STALE", severity: "MEDIUM", label: "Stale status" },
   UNVERIFIED_SELF_REPORT: { category: "EVIDENCE_GAP", severity: "MEDIUM", label: "Unverified self-report" },
   INSUFFICIENT_EVIDENCE: { category: "EVIDENCE_GAP", severity: "LOW", label: "Insufficient evidence" },
+  AI_OBSERVATION: { category: "OTHER", severity: "MEDIUM", label: "AI-proposed finding (category set per finding)" },
   OTHER: { category: "OTHER", severity: "MEDIUM", label: "Other" },
 };
 
@@ -56,9 +57,14 @@ export function staleSeverity(days: number): Severity {
   return days > thresholds.STALE_AFTER_DAYS * thresholds.STALE_HIGH_MULTIPLIER ? "HIGH" : "MEDIUM";
 }
 
-/** AI findings: severity from category, raised to CRITICAL when the contradiction touches readiness fields. */
-export function severityForAIFinding(type: FindingType, touchesReadiness: boolean): Severity {
-  const base = TYPE_META[type].severity;
-  if (TYPE_META[type].category === "CONFLICT" && touchesReadiness) return "CRITICAL";
-  return base;
+/** Base severity for AI-proposed findings, by category. Never taken from the LLM. */
+export const AI_CATEGORY_SEVERITY: Record<FindingCategory, Severity> = {
+  CONFLICT: "HIGH", READINESS_CLAIM: "HIGH", ACCESS: "HIGH", OWNERSHIP: "MEDIUM", MISSING_INFO: "MEDIUM",
+  STALE: "MEDIUM", FOLLOW_UP: "MEDIUM", EVIDENCE_GAP: "LOW", OTHER: "MEDIUM",
+};
+
+/** AI findings: severity from category, raised to CRITICAL when a contradiction touches readiness. */
+export function severityForAIFinding(category: FindingCategory, touchesReadiness: boolean): Severity {
+  if (category === "CONFLICT" && touchesReadiness) return "CRITICAL";
+  return AI_CATEGORY_SEVERITY[category];
 }

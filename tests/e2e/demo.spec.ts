@@ -34,8 +34,9 @@ test("dashboard is data-driven", async ({ page }) => {
   await page.goto("/dashboard");
   await expect(page.getByText("3 access items not usable")).toBeVisible();
   await page.getByRole("textbox", { name: "Search dashboard employees" }).fill("Eva Stone");
-  await expect(page.getByRole("link", { name: "Eva Stone" })).toBeVisible();
-  await expect(page.getByRole("link", { name: "Leo Marin" })).toHaveCount(0);
+  const table = page.getByRole("table");
+  await expect(table.getByRole("link", { name: "Eva Stone", exact: true })).toBeVisible();
+  await expect(table.getByRole("link", { name: "Leo Marin", exact: true })).toHaveCount(0);
 });
 
 test("primary navigation pages render", async ({ page }) => {

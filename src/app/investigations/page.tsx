@@ -5,6 +5,8 @@ import { SEVERITY_RANK } from "@/domain/types";
 import { loadPortfolio } from "@/modules/case/portfolio";
 import { TYPE_META, type FindingType } from "@/modules/detective/types";
 import FindingCard from "@/components/case/FindingCard";
+import { FindingActions, InvestigateAllButton } from "@/components/case/FindingActions";
+import { can } from "@/modules/permissions";
 import { EmptyState, ProvenanceBadge } from "@/components/ui/badges";
 
 export default async function InvestigationsPage({ searchParams }: { searchParams: Promise<{ category?: string; severity?: string }> }) {
@@ -37,8 +39,12 @@ export default async function InvestigationsPage({ searchParams }: { searchParam
         {["CRITICAL", "HIGH", "MEDIUM", "LOW"].map((s) => <Link key={s} href={link({ severity: severity === s ? undefined : s })} className={`rounded-full px-3 py-1 ${severity === s ? "bg-indigo-600 text-white" : "bg-white border"}`}>{s.toLowerCase()}</Link>)}
       </div>
       <p className="mt-3 flex flex-wrap items-center gap-2 text-xs text-slate-500"><ProvenanceBadge state="actual" /> rule findings · <ProvenanceBadge state="proposed" /> AI findings awaiting review · {rows.length} shown</p>
+      {can(session, "ai.run") && <div className="mt-4"><InvestigateAllButton employees={portfolio.filter((c) => c.open.length).map((c) => ({ id: c.state.employee.id, name: c.state.employee.name }))} /></div>}
       <div className="mt-4 space-y-4">
-        {rows.length ? rows.map(({ f, c }) => <FindingCard key={f.id} finding={f} state={c.state} showCase />) : <EmptyState title="No findings match these filters" />}
+        {rows.length ? rows.map(({ f, c }) => (
+          <FindingCard key={f.id} finding={f} state={c.state} showCase
+            actions={can(session, "finding.decide") ? <FindingActions findingId={f.id} status={f.status} evidenceIds={f.evidenceIds} caseEvidence={c.state.evidence.filter((e) => e.sourceType !== "TRACKER").map((e) => ({ id: e.id, title: e.title }))} /> : undefined} />
+        )) : <EmptyState title="No findings match these filters" />}
       </div>
       <details className="mt-6 rounded-xl border border-slate-200 bg-white p-4 text-sm">
         <summary className="cursor-pointer font-bold text-slate-600">Detector catalogue</summary>

@@ -3,6 +3,8 @@ import { ArrowRight, UserRound } from "lucide-react";
 import { AUTHORITY_LABEL, authorityFor, domainForField } from "@/domain/authority";
 import { roleLabel, type CaseState, type EvidenceItem, type FindingItem } from "@/domain/types";
 import { formatDate } from "@/lib/clock";
+import { parseJson } from "@/lib/json";
+import type { AIReview } from "@/modules/detective/investigate";
 import { EvidenceChip, FactOrAssumption, OriginBadge, ProvenanceBadge, SeverityBadge } from "@/components/ui/badges";
 
 /** Renders verbatim source text with every cited excerpt highlighted. */
@@ -53,6 +55,7 @@ export function ConflictViewer({ finding, evidence }: { finding: FindingItem; ev
 export default function FindingCard({ finding, state, actions, showCase }: { finding: FindingItem; state: CaseState; actions?: React.ReactNode; showCase?: boolean }) {
   const evidence = [...state.evidence, ...state.projectEvidence];
   const closed = finding.status === "RESOLVED" || finding.status === "DISMISSED";
+  const review = parseJson<AIReview | null>(finding.aiAnalysis, null);
   return (
     <article id={finding.id} data-finding-type={finding.type} className={`rounded-xl border bg-white p-5 ${finding.status === "PROPOSED" ? "border-dashed border-amber-300" : closed ? "border-slate-200 opacity-80" : "border-slate-200"}`}>
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -83,10 +86,24 @@ export default function FindingCard({ finding, state, actions, showCase }: { fin
           <div className="mt-2 space-y-2">
             {finding.assumptions.map((a, i) => <FactOrAssumption key={`a${i}`} kind="assumption" statement={a.statement} basis={a.basis} />)}
             {finding.rootCauses.map((r, i) => <FactOrAssumption key={`r${i}`} kind="assumption" statement={`Root-cause hypothesis: ${r.hypothesis}`} basis={r.supportingEvidenceIds.length ? `Related sources: ${r.supportingEvidenceIds.join(", ")}` : "No supporting source cited"} />)}
-            {!finding.assumptions.length && !finding.rootCauses.length && <p className="text-sm text-slate-500">None recorded. Run the AI Detective for root-cause hypotheses.</p>}
+            {!finding.assumptions.length && !finding.rootCauses.length && <p className="text-sm text-slate-500">None recorded{finding.origin === "RULE" && !review ? ". Run the AI Detective for root-cause hypotheses." : "."}</p>}
           </div>
         </div>
       </div>
+
+      {review && (
+        <div className="mt-4 rounded-lg border border-dashed border-violet-300 bg-violet-50/40 p-3" data-testid="ai-review">
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            <OriginBadge origin="AI" /><ProvenanceBadge state="proposed" />
+            <b className="text-violet-900">Detective review: {review.verdict === "CONFIRMED" ? "confirmed" : review.verdict === "NOT_AN_ISSUE" ? "suggests this is not an issue — a human must decide" : "unsure"}</b>
+            <Link href={`/ai-activity#${review.aiRunId}`} className="text-violet-700 hover:underline">{review.model} · run {review.aiRunId.slice(-6)} · {new Date(review.at).toLocaleString("en-GB", { timeZone: "UTC" })} UTC</Link>
+          </div>
+          <p className="mt-2 text-sm text-slate-700">{review.explanation}</p>
+          {review.recommendedActions.length > 0 && (
+            <ul className="mt-2 space-y-1">{review.recommendedActions.map((a, i) => <li key={i} className="flex items-start gap-2 text-sm"><ArrowRight size={14} className="mt-0.5 shrink-0 text-violet-500" /><span>{a.action} <span className="inline-flex items-center gap-1 rounded bg-violet-100 px-1.5 text-xs font-semibold text-violet-800"><UserRound size={11} />{roleLabel(a.ownerRole)}</span></span></li>)}</ul>
+          )}
+        </div>
+      )}
 
       {finding.recommendedActions.length > 0 && (
         <div className="mt-4">

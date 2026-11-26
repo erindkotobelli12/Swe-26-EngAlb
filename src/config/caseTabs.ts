@@ -9,8 +9,8 @@ export type CaseTabId = "overview" | "investigation" | "map" | "simulator" | "ro
 export const CASE_TABS: { id: CaseTabId; label: string; enabled: boolean; roles?: DemoRole[] }[] = [
   { id: "overview", label: "Overview", enabled: true },
   { id: "investigation", label: "Investigation", enabled: true },
-  { id: "map", label: "Dependency map", enabled: false },
-  { id: "simulator", label: "Simulator", enabled: false },
+  { id: "map", label: "Dependency map", enabled: true },
+  { id: "simulator", label: "Simulator", enabled: true },
   { id: "roadmap", label: "Roadmap", enabled: false },
   { id: "evidence", label: "Evidence & reliability", enabled: true },
   { id: "assessments", label: "Assessments", enabled: false },

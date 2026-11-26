@@ -15,16 +15,25 @@ import { CASE_TABS, type CaseTabId } from "@/config/caseTabs";
 import type { CaseState } from "@/domain/types";
 import ActionButton from "@/components/ActionButton";
 import FindingCard from "@/components/case/FindingCard";
+import { FindingActions, InvestigateButton } from "@/components/case/FindingActions";
+import ValidationForm from "@/components/case/ValidationForm";
+import DependencyMap from "@/components/map/DependencyMap";
+import DependencySuggestions from "@/components/map/DependencySuggestions";
+import Simulator from "@/components/simulator/Simulator";
+import { buildMapData } from "@/modules/dependencies/viewModel";
+import { availableToggles, simulate } from "@/modules/simulator/simulate";
+import { overridesFrom, presetChoice } from "@/modules/simulator/choices";
+import { levelLabel } from "@/modules/readiness/evaluate";
 import HistoryTimeline from "@/components/case/HistoryTimeline";
 import { AccessTable, KTTable, Stakeholders } from "@/components/case/CaseRecords";
 import { ChecklistPanel, GateList, ReadinessTriple } from "@/components/case/ReadinessPanels";
 import EvidenceCard from "@/components/evidence/EvidenceCard";
 import AddEvidenceForm from "@/components/evidence/AddEvidenceForm";
 import { ClaimReview, EvidenceTools } from "@/components/evidence/ReviewControls";
-import { Card, EmptyState, ProvenanceBadge, SeverityBadge } from "@/components/ui/badges";
+import { Card, EmptyState, EvidenceChip, ProvenanceBadge, SeverityBadge } from "@/components/ui/badges";
 
-export default async function EmployeeCase({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ tab?: string }> }) {
-  const [{ id }, { tab: rawTab }, session] = await Promise.all([params, searchParams, getSession()]);
+export default async function EmployeeCase({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ tab?: string; preset?: string }> }) {
+  const [{ id }, { tab: rawTab, preset }, session] = await Promise.all([params, searchParams, getSession()]);
   if (!can(session, "case.view", { employeeId: id })) {
     return <div className="px-5 py-6 md:px-8"><EmptyState title="You can only view your own onboarding case.">Switch demo user to open this case.</EmptyState></div>;
   }
@@ -35,6 +44,7 @@ export default async function EmployeeCase({ params, searchParams }: { params: P
   const tab: CaseTabId = tabs.find((t) => t.id === rawTab)?.id ?? "overview";
   const open = state.findings.filter((f) => f.status === "OPEN").sort(bySeverity);
   const rerun = recomputeCaseAction.bind(null, id);
+  const mapData = buildMapData(state, readiness);
 
   return (
     <div className="px-5 py-6 md:px-8">
@@ -75,12 +85,31 @@ export default async function EmployeeCase({ params, searchParams }: { params: P
                 </Card>
                 <Card title="Stakeholders"><Stakeholders state={state} /></Card>
                 <Card title="Onboarding checklist (starter pack §6)"><ChecklistPanel state={state} gates={readiness.gates} /></Card>
+                <Card title="Technical validation" id="validation">
+                  <ValidationHistory state={state} />
+                  {can(session, "validation.record")
+                    ? <div className="mt-4 border-t border-slate-100 pt-4"><p className="mb-2 text-xs text-slate-500">Decide with the gates and evidence on this page in view. Assessment results and AI output never replace observed execution.</p><ValidationForm employeeId={id} evidence={[...state.evidence, ...state.projectEvidence].filter((e) => e.reviewStatus === "APPROVED").map((e) => ({ id: e.id, title: e.title }))} /></div>
+                    : <p className="mt-3 text-xs text-slate-500">Only a Technical Lead can record a validation decision.</p>}
+                </Card>
               </div>
             </div>
           </div>
         )}
 
-        {tab === "investigation" && <InvestigationTab state={state} />}
+        {tab === "map" && (
+          <div className="space-y-4">
+            <DependencyMap data={mapData} employeeId={id} />
+            <DependencySuggestions employeeId={id} proposed={mapData.proposed} canDecide={can(session, "dependency.decide")} canRunAI={can(session, "ai.run")} />
+          </div>
+        )}
+
+        {tab === "simulator" && (() => {
+          const toggles = availableToggles(state, readiness);
+          const initialChoice = presetChoice(toggles, preset);
+          return <Simulator key={preset ?? "none"} employeeId={id} toggles={toggles} initialChoice={initialChoice} initialResult={simulate(state, overridesFrom(toggles, initialChoice, false))} actualLevel={levelLabel(readiness.assessed)} />;
+        })()}
+
+        {tab === "investigation" && <InvestigationTab state={state} session={session} />}
         {tab === "evidence" && <EvidenceTab employeeId={id} session={session} />}
         {tab === "history" && <HistoryTab employeeId={id} />}
       </div>
@@ -88,15 +117,38 @@ export default async function EmployeeCase({ params, searchParams }: { params: P
   );
 }
 
-function InvestigationTab({ state }: { state: CaseState }) {
+function ValidationHistory({ state }: { state: CaseState }) {
+  const decided = [...state.validations].filter((v) => v.timestamp).sort((a, b) => (b.timestamp ?? "").localeCompare(a.timestamp ?? ""));
+  if (!decided.length) return <p className="text-sm text-slate-500">No technical-owner validation recorded. Validated readiness: <b>none</b>.</p>;
+  return (
+    <ul className="space-y-2" data-testid="validation-history">
+      {decided.map((v) => (
+        <li key={v.id} className="rounded-lg border border-slate-200 p-3 text-sm">
+          <div className="flex flex-wrap items-center justify-between gap-2"><b>{v.state.replaceAll("_", " ").toLowerCase()}{v.validatedLevel ? ` · ${levelLabel(v.validatedLevel)}` : ""}</b><ProvenanceBadge state="actual" /></div>
+          <p className="mt-1 text-xs text-slate-500">{v.reviewerName ?? "Unknown"} ({v.reviewerRole}) · {formatDate(v.timestamp)}</p>
+          {v.comment && <p className="mt-1 text-sm text-slate-700">{v.comment}</p>}
+          <p className="mt-1 text-xs">{v.evidenceIds.map((e) => <EvidenceChip key={e} id={e} />)}</p>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function InvestigationTab({ state, session }: { state: CaseState; session: Awaited<ReturnType<typeof getSession>> }) {
   const open = state.findings.filter((f) => f.status === "OPEN").sort(bySeverity);
   const proposed = state.findings.filter((f) => f.status === "PROPOSED").sort(bySeverity);
   const closed = state.findings.filter((f) => f.status === "RESOLVED" || f.status === "DISMISSED");
+  const decide = can(session, "finding.decide");
+  const caseEvidence = state.evidence.filter((e) => e.sourceType !== "TRACKER").map((e) => ({ id: e.id, title: e.title }));
+  const actions = (f: CaseState["findings"][number]) => decide ? <FindingActions findingId={f.id} status={f.status} evidenceIds={f.evidenceIds} caseEvidence={caseEvidence} /> : undefined;
   return (
     <div className="space-y-4">
-      <p className="flex flex-wrap items-center gap-2 text-sm text-slate-600"><ProvenanceBadge state="actual" /> Rule findings are deterministic checks over stored records. <ProvenanceBadge state="proposed" /> AI findings await a human decision.</p>
-      {open.length ? open.map((f) => <FindingCard key={f.id} finding={f} state={state} />) : <EmptyState title="No open findings for this case" />}
-      {proposed.length > 0 && <><h2 className="pt-2 text-lg font-bold">AI proposals awaiting review</h2>{proposed.map((f) => <FindingCard key={f.id} finding={f} state={state} />)}</>}
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <p className="flex flex-wrap items-center gap-2 text-sm text-slate-600"><ProvenanceBadge state="actual" /> Rule findings are deterministic checks over stored records. <ProvenanceBadge state="proposed" /> AI findings and AI reviews await a human decision.</p>
+        {can(session, "ai.run") && <InvestigateButton employeeId={state.employee.id} />}
+      </div>
+      {open.length ? open.map((f) => <FindingCard key={f.id} finding={f} state={state} actions={actions(f)} />) : <EmptyState title="No open findings for this case" />}
+      {proposed.length > 0 && <><h2 className="pt-2 text-lg font-bold">AI proposals awaiting review</h2>{proposed.map((f) => <FindingCard key={f.id} finding={f} state={state} actions={actions(f)} />)}</>}
       {closed.length > 0 && <details className="rounded-xl border border-slate-200 bg-white p-4"><summary className="cursor-pointer text-sm font-bold text-slate-600">Resolved and dismissed ({closed.length})</summary><div className="mt-3 space-y-3">{closed.map((f) => <FindingCard key={f.id} finding={f} state={state} />)}</div></details>}
     </div>
   );
