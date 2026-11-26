@@ -1,3 +1,4 @@
+import { PageHeader } from "@/components/ui/PageHeader";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/db";
@@ -38,13 +39,11 @@ export default async function EvidencePage({ searchParams }: { searchParams: Pro
   for (const p of pending) suggestions.set(p.id, await fieldSuggestions(employeeOf.get(p.id) ?? null));
 
   return (
-    <div className="px-5 py-6 md:px-8">
-      <header><p className="text-sm text-slate-500">Human review inbox</p><h1 className="mt-1 text-2xl font-bold">Evidence</h1>
-        <p className="mt-2 max-w-3xl text-sm text-slate-600">New sources are stored verbatim and wait for review. The Extraction Agent proposes structured claims with verbatim excerpts; nothing changes case state until a human approves a claim.</p>
-      </header>
+    <div className="">
+      <PageHeader title="Evidence" subtitle="New sources are stored word for word and wait for review. Nothing changes a case until a person approves a claim." breadcrumbs={[{ label: "Evidence" }]} />
       {employees.length > 0 && <div className="mt-5"><AddEvidenceForm employees={employees.map((e) => ({ id: e.id, label: `${e.name} (${e.id})` }))} replyTargets={targets} defaultDate={getEvaluationDate()} /></div>}
 
-      <h2 className="mt-8 text-lg font-bold">Needs review <span className="text-sm font-normal text-slate-500">({pending.length})</span></h2>
+      <h2 className="mt-8 text-lg font-semibold">Needs review <span className="text-sm font-normal text-subtle">({pending.length})</span></h2>
       <div className="mt-3 grid gap-3">
         {pending.length ? pending.map((e) => (
           <EvidenceCard key={e.id} e={e}
@@ -55,8 +54,8 @@ export default async function EvidencePage({ searchParams }: { searchParams: Pro
       </div>
 
       <div className="mt-8 flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-lg font-bold">Reviewed sources <span className="text-sm font-normal text-slate-500">({reviewed.length})</span></h2>
-        <Link href={includeTracker ? "/evidence" : "/evidence?show=tracker"} className="text-xs font-bold text-indigo-600">{includeTracker ? "Hide tracker entries" : "Show tracker entries"}</Link>
+        <h2 className="text-lg font-semibold">Reviewed sources <span className="text-sm font-normal text-subtle">({reviewed.length})</span></h2>
+        <Link href={includeTracker ? "/evidence" : "/evidence?show=tracker"} className="text-xs font-semibold text-brand-700">{includeTracker ? "Hide tracker entries" : "Show tracker entries"}</Link>
       </div>
       <div className="mt-3 grid gap-3">{reviewed.map((e) => <EvidenceCard key={e.id} e={e} />)}</div>
     </div>

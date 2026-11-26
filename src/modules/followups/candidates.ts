@@ -176,8 +176,8 @@ export function buildFollowUps(
     g.escalationLevel = top;
     const target = ESCALATE_TO[g.stakeholder.role] ?? "the employee's Line Manager";
     g.escalationRecommendation = top === 2
-      ? `Escalation recommended to ${target}: ${g.items.filter((i) => i.escalationLevel === 2).length} item(s) open ≥ ${thresholds.ESCALATE_AFTER_DAYS} days (ESCALATE_AFTER_DAYS). Not sent automatically.`
-      : top === 1 ? `Reminder due: item(s) open ≥ ${thresholds.REMINDER_AFTER_DAYS} days (REMINDER_AFTER_DAYS).` : null;
+      ? `Escalation recommended to ${target}: ${g.items.filter((i) => i.escalationLevel === 2).length} item(s) open ${thresholds.ESCALATE_AFTER_DAYS} days or more. Not sent automatically.`
+      : top === 1 ? `Reminder due: item(s) open ${thresholds.REMINDER_AFTER_DAYS} days or more.` : null;
     return g;
   });
   return out.sort((a, b) => b.score - a.score || a.stakeholder.label.localeCompare(b.stakeholder.label));
