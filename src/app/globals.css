@@ -1,0 +1,6 @@
+@import "tailwindcss";
+
+:root { --navy: #172033; --blue: #315efb; }
+* { box-sizing: border-box; }
+body { margin: 0; background: #f5f7fb; color: var(--navy); }
+button, input, select, textarea { font: inherit; }
