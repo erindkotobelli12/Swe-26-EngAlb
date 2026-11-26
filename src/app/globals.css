@@ -4,3 +4,17 @@
 * { box-sizing: border-box; }
 body { margin: 0; background: #f5f7fb; color: var(--navy); }
 button, input, select, textarea { font: inherit; }
+
+/* Simulated data: a distinct, persistent striped purple treatment. */
+.sim-stripes {
+  background-image: repeating-linear-gradient(135deg, #f5f3ff 0 8px, #ede9fe 8px 16px);
+}
+.sim-banner {
+  background-image: repeating-linear-gradient(135deg, #6d28d9 0 14px, #7c3aed 14px 28px);
+}
+
+@media print {
+  aside, nav, .no-print { display: none !important; }
+  main { padding: 0 !important; }
+  body { background: white; }
+}

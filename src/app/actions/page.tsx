@@ -1,7 +1,0 @@
-import { prisma } from "@/lib/db";
-import { CircleAlert, CalendarDays, UserRound } from "lucide-react";
-
-export default async function ActionsPage(){
-  const actions=await prisma.actionItem.findMany({include:{employee:true,finding:true},orderBy:{priority:"asc"}});
-  return <div className="px-5 py-6 md:px-8"><header><p className="text-sm text-slate-500">Cross-team follow-up</p><h1 className="mt-1 text-2xl font-bold">Action center</h1></header><div className="mt-5 grid gap-3">{actions.length?actions.map(a=><article key={a.id} className="rounded-xl border border-slate-200 bg-white p-5"><div className="flex flex-wrap justify-between gap-3"><div><div className="flex items-center gap-2"><CircleAlert size={17} className="text-amber-600"/><h2 className="font-bold">{a.title}</h2></div><p className="mt-2 text-sm text-slate-600">{a.description}</p></div><span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold">{a.status}</span></div><div className="mt-4 flex flex-wrap gap-5 text-xs text-slate-500"><span className="flex items-center gap-1"><UserRound size={14}/>{a.ownerRole ?? a.ownerName ?? "Owner unknown"}</span><span className="flex items-center gap-1"><CalendarDays size={14}/>{a.dueDate ?? "Proposed date not set"}</span></div></article>):<div className="rounded-xl border border-dashed border-slate-300 bg-white p-10 text-center text-slate-500">No action proposals are currently stored.</div>}</div></div>
-}

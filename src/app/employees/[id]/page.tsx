@@ -1,31 +1,137 @@
-import { prisma } from "@/lib/db";
-import { notFound } from "next/navigation";
-import { assessEmployee } from "@/modules/readiness/assessment";
-import { ShieldCheck, AlertTriangle, CheckCircle2, Circle, ClipboardCheck } from "lucide-react";
 import Link from "next/link";
+import { notFound } from "next/navigation";
+import { RefreshCw } from "lucide-react";
+import { prisma } from "@/lib/db";
+import { getSession } from "@/lib/auth";
+import { formatDate, getEvaluationDate } from "@/lib/clock";
+import { parseJson } from "@/lib/json";
+import { loadCaseState } from "@/modules/case/loadCaseState";
+import { bySeverity } from "@/modules/case/portfolio";
+import { can } from "@/modules/permissions";
+import { evaluateReadiness } from "@/modules/readiness/evaluate";
+import { fieldSuggestions, listEvidenceCards, replyTargets } from "@/modules/evidence/queries";
+import { recomputeCaseAction } from "@/server/actions/case";
+import { CASE_TABS, type CaseTabId } from "@/config/caseTabs";
+import type { CaseState } from "@/domain/types";
+import ActionButton from "@/components/ActionButton";
+import FindingCard from "@/components/case/FindingCard";
+import HistoryTimeline from "@/components/case/HistoryTimeline";
+import { AccessTable, KTTable, Stakeholders } from "@/components/case/CaseRecords";
+import { ChecklistPanel, GateList, ReadinessTriple } from "@/components/case/ReadinessPanels";
+import EvidenceCard from "@/components/evidence/EvidenceCard";
+import AddEvidenceForm from "@/components/evidence/AddEvidenceForm";
+import { ClaimReview, EvidenceTools } from "@/components/evidence/ReviewControls";
+import { Card, EmptyState, ProvenanceBadge, SeverityBadge } from "@/components/ui/badges";
 
-export default async function EmployeeDetail({params}:{params:Promise<{id:string}>}) {
-  const {id}=await params;
-  const employee=await prisma.employee.findUnique({where:{id},include:{project:true,case:{include:{findings:true,validations:true}},access:true,activities:true,evidence:true}});
-  if(!employee) notFound();
-  const assessment=assessEmployee({id,trackerStatus:employee.trackerStatus,accessUsable:employee.access.filter(a=>a.status==="USABLE").length,accessRequired:employee.access.length,requiredActivities:employee.activities.filter(a=>a.requiredForReady).length,completedActivities:employee.activities.filter(a=>a.stage==="INDEPENDENT_EXECUTION").length,technicalValidation:employee.activities.some(a=>a.validation==="APPROVED")?"APPROVED":"PENDING",hasMaterialConflict:employee.case?.findings.some(f=>f.type==="CONFLICTING_READINESS")??false});
-  const isEva=id==="ONB-005";
-  return <div className="px-5 py-6 md:px-8">
-    <div className="flex items-center justify-between"><div><p className="text-sm text-slate-500">Employee case · {id}</p><h1 className="mt-1 text-2xl font-bold">{employee.name}</h1></div><span className="rounded-full bg-indigo-50 px-3 py-1 text-sm font-bold text-indigo-700">{assessment.status.replaceAll("_"," ")}</span></div>
-    <div className="mt-5 grid gap-5 lg:grid-cols-[1fr_360px]">
-      <section className="rounded-xl border border-slate-200 bg-white p-5">
-        <h2 className="font-bold">Explain my readiness</h2><p className="mt-3 rounded-lg bg-slate-50 p-4 text-sm leading-6 text-slate-700">{assessment.explanation}</p>
-        <div className="mt-5 grid gap-3 md:grid-cols-2"><div><p className="text-xs font-bold uppercase text-slate-400">Reported status</p><p className="mt-1 font-semibold">{employee.trackerStatus}</p></div><div><p className="text-xs font-bold uppercase text-slate-400">Project</p><p className="mt-1 font-semibold">{employee.project?.name ?? "Unknown"}</p></div></div>
-        <h3 className="mt-6 font-bold">Readiness evidence</h3><div className="mt-3 space-y-2">{employee.evidence.map(e=><div key={e.id} className="flex gap-3 rounded-lg border border-slate-100 p-3"><ClipboardCheck size={17} className="mt-0.5 text-indigo-600"/><div><b className="text-sm">{e.title}</b><p className="mt-1 text-xs text-slate-500">{e.id} · {e.timestamp} · {e.author}</p></div></div>)}</div>
-      </section>
-      <aside className="space-y-5">
-        <section className="rounded-xl border border-slate-200 bg-white p-5"><h2 className="font-bold">Risk flags</h2><div className="mt-3 space-y-2">{assessment.risks.map(r=><div key={r} className="flex items-center gap-2 text-sm font-medium text-amber-700"><AlertTriangle size={16}/>{r.replaceAll("_"," ")}</div>)}</div></section>
-        <section className="rounded-xl border border-slate-200 bg-white p-5"><h2 className="font-bold">Access</h2><div className="mt-3 space-y-3">{employee.access.length?employee.access.map(a=><div key={a.id} className="text-sm"><div className="flex justify-between"><b>{a.application}</b><span className={a.status==="USABLE"?"text-green-600":"text-amber-600"}>{a.status}</span></div>{a.blockerReason&&<p className="mt-1 text-xs text-slate-500">{a.blockerReason}</p>}</div>):<p className="text-sm text-slate-500">No access requests recorded.</p>}</div></section>
-      </aside>
+export default async function EmployeeCase({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ tab?: string }> }) {
+  const [{ id }, { tab: rawTab }, session] = await Promise.all([params, searchParams, getSession()]);
+  if (!can(session, "case.view", { employeeId: id })) {
+    return <div className="px-5 py-6 md:px-8"><EmptyState title="You can only view your own onboarding case.">Switch demo user to open this case.</EmptyState></div>;
+  }
+  const state = await loadCaseState(id);
+  if (!state) notFound();
+  const readiness = evaluateReadiness(state);
+  const tabs = CASE_TABS.filter((t) => t.enabled && (!t.roles || t.roles.includes(session.role)));
+  const tab: CaseTabId = tabs.find((t) => t.id === rawTab)?.id ?? "overview";
+  const open = state.findings.filter((f) => f.status === "OPEN").sort(bySeverity);
+  const rerun = recomputeCaseAction.bind(null, id);
+
+  return (
+    <div className="px-5 py-6 md:px-8">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <p className="text-sm text-slate-500"><Link href="/employees" className="hover:underline">Employees</Link> / {state.employee.id}</p>
+          <h1 className="mt-1 text-2xl font-bold">{state.employee.name}</h1>
+          <p className="mt-1 text-sm text-slate-600">{state.employee.projectName ?? <span className="font-semibold text-red-600">Project not recorded</span>} · {state.employee.movement} · started {formatDate(state.employee.startDate)} · tracker updated {formatDate(state.employee.lastUpdate)}</p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-500">Evaluation date <b className="text-slate-800">{formatDate(getEvaluationDate())}</b></span>
+          {can(session, "case.recompute") && <ActionButton action={rerun} label="Re-run analysis" pendingLabel="Recomputing…" icon={<RefreshCw size={15} />} variant="secondary" />}
+        </div>
+      </div>
+
+      <nav className="mt-5 flex gap-1 overflow-x-auto border-b border-slate-200" aria-label="Case sections">
+        {tabs.map((t) => (
+          <Link key={t.id} href={`/employees/${id}?tab=${t.id}`} aria-current={t.id === tab ? "page" : undefined}
+            className={`whitespace-nowrap border-b-2 px-3 py-2 text-sm font-semibold ${t.id === tab ? "border-indigo-600 text-indigo-700" : "border-transparent text-slate-500 hover:text-slate-800"}`}>
+            {t.label}{t.id === "investigation" && open.length ? <span className="ml-1.5 rounded-full bg-red-100 px-1.5 text-[11px] text-red-700">{open.length}</span> : null}
+          </Link>
+        ))}
+      </nav>
+
+      <div className="mt-5">
+        {tab === "overview" && (
+          <div className="space-y-5">
+            <ReadinessTriple readiness={readiness} />
+            <div className="grid gap-5 xl:grid-cols-[1fr_380px]">
+              <div className="space-y-5">
+                <Card title="Readiness gates"><GateList gates={readiness.gates} /></Card>
+                <Card title="Access"><AccessTable state={state} /></Card>
+                <Card title="Knowledge transfer"><KTTable state={state} /></Card>
+              </div>
+              <div className="space-y-5">
+                <Card title="Open findings" actions={<Link href={`/employees/${id}?tab=investigation`} className="text-xs font-bold text-indigo-600">Investigate →</Link>}>
+                  {open.length ? <ul className="space-y-2">{open.slice(0, 6).map((f) => <li key={f.id} className="flex items-start justify-between gap-2 text-sm"><span>{f.title}</span><SeverityBadge severity={f.severity} /></li>)}</ul> : <p className="text-sm text-slate-500">No open findings.</p>}
+                </Card>
+                <Card title="Stakeholders"><Stakeholders state={state} /></Card>
+                <Card title="Onboarding checklist (starter pack §6)"><ChecklistPanel state={state} gates={readiness.gates} /></Card>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {tab === "investigation" && <InvestigationTab state={state} />}
+        {tab === "evidence" && <EvidenceTab employeeId={id} session={session} />}
+        {tab === "history" && <HistoryTab employeeId={id} />}
+      </div>
     </div>
-    {isEva&&<section className="mt-5 rounded-xl border-2 border-indigo-100 bg-white p-5">    <div className="flex items-center justify-between"><div><p className="text-xs font-bold uppercase text-indigo-600">Readiness Conflict Center</p><h2 className="mt-1 text-xl font-bold">Eva readiness reports</h2></div><Link href="/evidence" className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-bold text-white">Attach evidence</Link></div><div className="mt-4 grid gap-4 md:grid-cols-2">
-      <article className="rounded-lg border border-slate-200 p-4"><p className="text-xs font-bold text-slate-500">EMAIL-003 · Technical Lead · 13 Oct 2026</p><p className="mt-3 text-lg font-bold text-amber-700">Ready with Support</p><blockquote className="mt-3 border-l-4 border-amber-300 pl-3 text-sm">“Eva handles standard requests with occasional support; two complex scenarios remain.”</blockquote></article>
-      <article className="rounded-lg border border-slate-200 p-4"><p className="text-xs font-bold text-slate-500">EMAIL-004 · Line Manager · 13 Oct 2026</p><p className="mt-3 text-lg font-bold text-slate-700">Independent claim</p><blockquote className="mt-3 border-l-4 border-slate-300 pl-3 text-sm">“Eva appears independent and the manager considers onboarding closed.”</blockquote></article>
-    </div><p className="mt-4 text-sm text-slate-600"><b>Contradiction:</b> one role expects support for complex work while the manager asserts closure. The conflict remains unresolved until technical evidence is reviewed.</p></section>}
-  </div>;
+  );
+}
+
+function InvestigationTab({ state }: { state: CaseState }) {
+  const open = state.findings.filter((f) => f.status === "OPEN").sort(bySeverity);
+  const proposed = state.findings.filter((f) => f.status === "PROPOSED").sort(bySeverity);
+  const closed = state.findings.filter((f) => f.status === "RESOLVED" || f.status === "DISMISSED");
+  return (
+    <div className="space-y-4">
+      <p className="flex flex-wrap items-center gap-2 text-sm text-slate-600"><ProvenanceBadge state="actual" /> Rule findings are deterministic checks over stored records. <ProvenanceBadge state="proposed" /> AI findings await a human decision.</p>
+      {open.length ? open.map((f) => <FindingCard key={f.id} finding={f} state={state} />) : <EmptyState title="No open findings for this case" />}
+      {proposed.length > 0 && <><h2 className="pt-2 text-lg font-bold">AI proposals awaiting review</h2>{proposed.map((f) => <FindingCard key={f.id} finding={f} state={state} />)}</>}
+      {closed.length > 0 && <details className="rounded-xl border border-slate-200 bg-white p-4"><summary className="cursor-pointer text-sm font-bold text-slate-600">Resolved and dismissed ({closed.length})</summary><div className="mt-3 space-y-3">{closed.map((f) => <FindingCard key={f.id} finding={f} state={state} />)}</div></details>}
+    </div>
+  );
+}
+
+async function EvidenceTab({ employeeId, session }: { employeeId: string; session: Awaited<ReturnType<typeof getSession>> }) {
+  const employee = await prisma.employee.findUniqueOrThrow({ where: { id: employeeId }, select: { projectId: true, name: true } });
+  const [cards, project, fields, targets] = await Promise.all([
+    listEvidenceCards({ employeeId }),
+    employee.projectId ? listEvidenceCards({ projectId: employee.projectId, employeeId: null }) : Promise.resolve([]),
+    fieldSuggestions(employeeId),
+    replyTargets(),
+  ]);
+  const canReview = can(session, "evidence.review");
+  const canRunAI = can(session, "ai.run");
+  return (
+    <div className="space-y-4">
+      {can(session, "evidence.add", { employeeId }) && <AddEvidenceForm employees={[]} fixedEmployeeId={employeeId} replyTargets={targets} defaultDate={getEvaluationDate()} />}
+      {cards.map((e) => (
+        <EvidenceCard key={e.id} e={e}
+          controls={e.sourceType !== "TRACKER" && (canReview || canRunAI) ? <EvidenceTools evidenceId={e.id} reviewStatus={e.reviewStatus} canRunAI={canRunAI} canReview={canReview} fields={fields} /> : undefined}
+          claimControls={canReview ? (claimId) => <ClaimReview claimId={claimId} value={e.claims.find((c) => c.id === claimId)?.value ?? ""} /> : undefined}
+        />
+      ))}
+      {project.length > 0 && <><h2 className="pt-2 font-bold">Project-level evidence</h2>{project.map((e) => <EvidenceCard key={e.id} e={e} />)}</>}
+    </div>
+  );
+}
+
+async function HistoryTab({ employeeId }: { employeeId: string }) {
+  const caseRow = await prisma.onboardingCase.findUnique({ where: { employeeId }, select: { id: true } });
+  const logs = await prisma.auditLog.findMany({ where: { OR: [{ employeeId }, { entityId: caseRow?.id ?? "" }] }, orderBy: { timestamp: "desc" }, take: 300 });
+  return (
+    <Card title="Case history">
+      <HistoryTimeline entries={logs.map((l) => ({ id: l.id, timestamp: l.timestamp, actor: l.actorLabel ?? "Unknown", action: l.action, entityType: l.entityType, entityId: l.entityId, details: l.details, before: l.before, after: l.after, evidenceIds: parseJson(l.evidenceIds, [] as string[]) }))} />
+    </Card>
+  );
 }

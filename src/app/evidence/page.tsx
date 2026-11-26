@@ -1,10 +1,54 @@
+import Link from "next/link";
+import { redirect } from "next/navigation";
 import { prisma } from "@/lib/db";
-import { Inbox, Plus, FileText } from "lucide-react";
-import { addEvidence } from "./actions";
+import { getSession } from "@/lib/auth";
+import { getEvaluationDate } from "@/lib/clock";
+import { can } from "@/modules/permissions";
+import { fieldSuggestions, listEvidenceCards, replyTargets } from "@/modules/evidence/queries";
+import EvidenceCard from "@/components/evidence/EvidenceCard";
+import AddEvidenceForm from "@/components/evidence/AddEvidenceForm";
+import { ClaimReview, EvidenceTools } from "@/components/evidence/ReviewControls";
+import { EmptyState } from "@/components/ui/badges";
 
-export default async function EvidencePage(){
-  const evidence=await prisma.evidence.findMany({orderBy:{timestamp:"desc"},include:{employee:true,claims:true}});
-  return <div className="px-5 py-6 md:px-8"><header className="flex items-center justify-between"><div><p className="text-sm text-slate-500">Human review inbox</p><h1 className="mt-1 text-2xl font-bold">Evidence</h1></div></header>
-  <details className="mt-5 rounded-xl border border-slate-200 bg-white p-4"><summary className="cursor-pointer font-bold text-indigo-700">Add evidence</summary><form action={addEvidence} className="mt-4 grid gap-3 md:grid-cols-2"><input name="id" required placeholder="Evidence ID" className="rounded-lg border px-3 py-2"/><input name="title" required placeholder="Source title" className="rounded-lg border px-3 py-2"/><select name="sourceType" className="rounded-lg border px-3 py-2"><option>EMAIL</option><option>TEAMS_MESSAGE</option><option>EMPLOYEE_UPDATE</option><option>MEETING_NOTE</option></select><select name="employeeId" className="rounded-lg border px-3 py-2"><option value="">Project or unknown</option>{evidence.map(e=>e.employee).filter((e,i,a)=>e&&a.findIndex(x=>x?.id===e.id)===i).map(e=>e&&<option key={e.id} value={e.id}>{e.name}</option>)}</select><textarea name="content" required minLength={10} placeholder="Original source content" className="md:col-span-2 min-h-24 rounded-lg border px-3 py-2"/><button className="w-fit rounded-lg bg-indigo-600 px-4 py-2 text-sm font-bold text-white">Save evidence</button></form></details>
-  <div className="mt-5 grid gap-3">{evidence.map(e=><article id={e.id} key={e.id} className="rounded-xl border border-slate-200 bg-white p-5"><div className="flex gap-4"><div className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-indigo-50 text-indigo-600"><FileText size={20}/></div><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><b>{e.title}</b><span className="rounded bg-slate-100 px-2 py-0.5 text-xs">{e.id}</span></div><p className="mt-1 text-xs text-slate-500">{e.sourceType} · {e.author} · {e.timestamp} · {e.employee?.name ?? "Project evidence"}</p><p className="mt-3 text-sm text-slate-700">{e.content}</p>{e.claims.length>0&&<p className="mt-3 text-xs font-bold text-amber-700">{e.claims.length} structured claim(s) · review state {e.claims[0].reviewStatus}</p>}</div></div></article>)}</div></div>
+export default async function EvidencePage({ searchParams }: { searchParams: Promise<{ show?: string }> }) {
+  const session = await getSession();
+  if (session.role === "EMPLOYEE") redirect("/workspace");
+  const { show } = await searchParams;
+  const includeTracker = show === "tracker";
+  const [pending, reviewed, employees, targets] = await Promise.all([
+    listEvidenceCards({ OR: [{ reviewStatus: "PENDING_REVIEW" }, { claims: { some: { reviewStatus: "PENDING" } } }] }),
+    listEvidenceCards({ reviewStatus: { not: "PENDING_REVIEW" }, claims: { none: { reviewStatus: "PENDING" } }, ...(includeTracker ? {} : { sourceType: { not: "TRACKER" } }) }),
+    prisma.employee.findMany({ where: { isSimulated: false }, orderBy: { name: "asc" }, select: { id: true, name: true } }),
+    replyTargets(),
+  ]);
+  const canReview = can(session, "evidence.review");
+  const canRunAI = can(session, "ai.run");
+  const employeeOf = new Map((await prisma.evidence.findMany({ where: { id: { in: pending.map((p) => p.id) } }, select: { id: true, employeeId: true } })).map((e) => [e.id, e.employeeId]));
+  const suggestions = new Map<string, string[]>();
+  for (const p of pending) suggestions.set(p.id, await fieldSuggestions(employeeOf.get(p.id) ?? null));
+
+  return (
+    <div className="px-5 py-6 md:px-8">
+      <header><p className="text-sm text-slate-500">Human review inbox</p><h1 className="mt-1 text-2xl font-bold">Evidence</h1>
+        <p className="mt-2 max-w-3xl text-sm text-slate-600">New sources are stored verbatim and wait for review. The Extraction Agent proposes structured claims with verbatim excerpts; nothing changes case state until a human approves a claim.</p>
+      </header>
+      {can(session, "evidence.add") && <div className="mt-5"><AddEvidenceForm employees={employees.map((e) => ({ id: e.id, label: `${e.name} (${e.id})` }))} replyTargets={targets} defaultDate={getEvaluationDate()} /></div>}
+
+      <h2 className="mt-8 text-lg font-bold">Needs review <span className="text-sm font-normal text-slate-500">({pending.length})</span></h2>
+      <div className="mt-3 grid gap-3">
+        {pending.length ? pending.map((e) => (
+          <EvidenceCard key={e.id} e={e}
+            controls={(canReview || canRunAI) ? <EvidenceTools evidenceId={e.id} reviewStatus={e.reviewStatus} canRunAI={canRunAI && Boolean(e.employeeName)} canReview={canReview} fields={suggestions.get(e.id) ?? []} /> : undefined}
+            claimControls={canReview ? (claimId) => <ClaimReview claimId={claimId} value={e.claims.find((c) => c.id === claimId)?.value ?? ""} /> : undefined}
+          />
+        )) : <EmptyState title="Nothing waiting for review">New evidence and AI-proposed claims appear here.</EmptyState>}
+      </div>
+
+      <div className="mt-8 flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-lg font-bold">Reviewed sources <span className="text-sm font-normal text-slate-500">({reviewed.length})</span></h2>
+        <Link href={includeTracker ? "/evidence" : "/evidence?show=tracker"} className="text-xs font-bold text-indigo-600">{includeTracker ? "Hide tracker entries" : "Show tracker entries"}</Link>
+      </div>
+      <div className="mt-3 grid gap-3">{reviewed.map((e) => <EvidenceCard key={e.id} e={e} />)}</div>
+    </div>
+  );
 }

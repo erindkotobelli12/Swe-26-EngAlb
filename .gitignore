@@ -7,3 +7,8 @@ prisma/dev.db
 test-results
 playwright-report
 tsconfig.tsbuildinfo
+
+# Office lock files
+~$*
+prisma/test.db*
+

@@ -1,2 +1,7 @@
 import { redirect } from "next/navigation";
-export default function Page(){redirect("/dashboard");}
+import { getSession } from "@/lib/auth";
+
+export default async function Page() {
+  const session = await getSession();
+  redirect(session.role === "EMPLOYEE" ? "/workspace" : "/dashboard");
+}

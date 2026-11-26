@@ -2,47 +2,40 @@
 
 import { FormEvent, useState } from "react";
 import Link from "next/link";
-import { Send, Sparkles } from "lucide-react";
+import { Loader2, Send, Sparkles } from "lucide-react";
+import { z } from "zod";
 
-type AssistantResult = { answer: string; evidenceIds: string[] };
+const ResultSchema = z.object({
+  answer: z.string(),
+  citations: z.array(z.object({ evidenceId: z.string(), excerpt: z.string() })),
+  droppedCitations: z.number(),
+  aiRunId: z.string(),
+  model: z.string(),
+});
+type AssistantResult = z.infer<typeof ResultSchema>;
 type LLMStatus = { available: boolean; model: string; message: string };
 
-export default function AssistantChat({ llmStatus }: { llmStatus: LLMStatus }) {
+export default function AssistantChat({ llmStatus, placeholder }: { llmStatus: LLMStatus; placeholder: string }) {
   const [question, setQuestion] = useState("");
   const [result, setResult] = useState<AssistantResult | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
-  async function ask(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  async function ask(event?: FormEvent<HTMLFormElement>) {
+    event?.preventDefault();
     setError("");
     setResult(null);
     setLoading(true);
     try {
-      const response = await fetch("/api/assistant", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question }),
-      });
+      const response = await fetch("/api/assistant", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question }) });
       const data: unknown = await response.json();
       if (!response.ok) {
-        const message = typeof data === "object" && data !== null && "error" in data && typeof data.error === "string"
-          ? data.error
-          : "The assistant request failed.";
-        setError(message);
-      } else if (
-        typeof data === "object" &&
-        data !== null &&
-        "answer" in data &&
-        typeof data.answer === "string" &&
-        "evidenceIds" in data &&
-        Array.isArray(data.evidenceIds) &&
-        data.evidenceIds.every((id) => typeof id === "string")
-      ) {
-        setResult({ answer: data.answer, evidenceIds: data.evidenceIds });
-      } else {
-        setError("The assistant returned an invalid response.");
+        setError(typeof data === "object" && data && "error" in data && typeof data.error === "string" ? data.error : "The assistant request failed.");
+        return;
       }
+      const parsed = ResultSchema.safeParse(data);
+      if (parsed.success) setResult(parsed.data);
+      else setError("The assistant returned an invalid response.");
     } catch {
       setError("Could not reach the assistant service. Check the server and try again.");
     } finally {
@@ -59,45 +52,36 @@ export default function AssistantChat({ llmStatus }: { llmStatus: LLMStatus }) {
             {llmStatus.available ? `Live local LLM · ${llmStatus.model}` : "Local LLM unavailable"}
           </span>
         </div>
-        {!llmStatus.available && (
-          <p role="status" className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-            {llmStatus.message} No simulated answers are provided.
-          </p>
-        )}
+        {!llmStatus.available && <p role="status" className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">{llmStatus.message} No simulated answers are provided.</p>}
         <form onSubmit={ask} className="mt-4 flex gap-2">
-          <input
-            aria-label="Ask a question"
-            value={question}
-            onChange={(event) => setQuestion(event.target.value)}
-            placeholder="Why is Eva not independently ready?"
-            minLength={3}
-            maxLength={2000}
-            required
-            className="flex-1 rounded-lg border border-slate-200 px-4 py-3 outline-none focus:border-indigo-400"
-          />
-          <button
-            type="submit"
-            disabled={loading || !llmStatus.available}
-            className="grid h-12 w-12 place-items-center rounded-lg bg-indigo-600 text-white disabled:cursor-not-allowed disabled:opacity-50"
-            aria-label="Ask"
-          >
-            <Send size={18} />
+          <input aria-label="Ask a question" value={question} onChange={(e) => setQuestion(e.target.value)} placeholder={placeholder} minLength={3} maxLength={2000} required className="flex-1 rounded-lg border border-slate-200 px-4 py-3 outline-none focus:border-indigo-400" />
+          <button type="submit" disabled={loading || !llmStatus.available} className="grid h-12 w-12 place-items-center rounded-lg bg-indigo-600 text-white disabled:cursor-not-allowed disabled:opacity-50" aria-label="Ask">
+            {loading ? <Loader2 size={18} className="animate-spin" /> : <Send size={18} />}
           </button>
         </form>
+        <p className="mt-2 text-xs text-slate-500">Answers are generated by the local model from stored records. Every citation is checked against the stored source text; the assistant cannot change any record.</p>
       </div>
       {loading && <p role="status" className="mt-4 text-sm text-slate-500">Requesting a live answer from the local model…</p>}
-      {error && <p role="alert" className="mt-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">{error}</p>}
+      {error && (
+        <div role="alert" className="mt-4 flex items-center justify-between gap-3 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+          <span>{error}</span>
+          <button type="button" onClick={() => ask()} disabled={!question} className="rounded-md border border-red-300 bg-white px-3 py-1 text-xs font-bold">Retry</button>
+        </div>
+      )}
       {result && (
         <div className="mt-4 rounded-xl border border-slate-200 bg-white p-5">
-          <p className="text-sm leading-7">{result.answer}</p>
-          {result.evidenceIds.length > 0 && (
-            <div className="mt-4 border-t border-slate-100 pt-3">
-              <p className="text-xs font-bold uppercase text-slate-500">Database evidence</p>
-              <div className="mt-2 flex flex-wrap gap-2">
-                {result.evidenceIds.map((id) => <Link key={id} href={`/evidence#${encodeURIComponent(id)}`} className="rounded-full bg-indigo-50 px-3 py-1 text-xs font-semibold text-indigo-700 hover:bg-indigo-100">{id}</Link>)}
-              </div>
+          <p className="whitespace-pre-line text-sm leading-7">{result.answer}</p>
+          {result.citations.length > 0 && (
+            <div className="mt-4 space-y-2 border-t border-slate-100 pt-3">
+              <p className="text-xs font-bold uppercase text-slate-500">Verified citations</p>
+              {result.citations.map((c, i) => (
+                <blockquote key={i} className="border-l-4 border-emerald-300 pl-3 text-sm italic text-slate-700">“{c.excerpt}” <Link href={`/evidence#${encodeURIComponent(c.evidenceId)}`} className="not-italic rounded-full bg-indigo-50 px-2 py-0.5 text-xs font-semibold text-indigo-700">{c.evidenceId}</Link></blockquote>
+              ))}
             </div>
           )}
+          {result.droppedCitations > 0 && <p className="mt-3 text-xs text-amber-800">{result.droppedCitations} citation(s) were removed because the quoted text was not found verbatim in the source.</p>}
+          {result.citations.length === 0 && <p className="mt-3 text-xs text-amber-800">No verifiable citation — treat this answer as unsupported.</p>}
+          <p className="mt-3 text-[11px] text-slate-400">AI run {result.aiRunId.slice(-6)} · {result.model}</p>
         </div>
       )}
     </div>

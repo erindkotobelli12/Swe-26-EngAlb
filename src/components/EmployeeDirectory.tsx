@@ -10,6 +10,7 @@ type EmployeeRow = {
   movement: string;
   project: string | null;
   reportedStatus: string;
+  assessed: string;
   lastUpdate: string;
   risks: string[];
 };
@@ -74,7 +75,7 @@ export default function EmployeeDirectory({ employees }: { employees: EmployeeRo
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm">
             <thead className="bg-slate-50 text-xs uppercase text-slate-500">
-              <tr>{["Employee", "Movement", "Project", "Reported status", "Open findings", "Last update", ""].map((heading) => <th key={heading} className="whitespace-nowrap px-4 py-3">{heading}</th>)}</tr>
+              <tr>{["Employee", "Movement", "Project", "Reported status", "Assessed", "Open findings", "Last update", ""].map((heading) => <th key={heading} className="whitespace-nowrap px-4 py-3">{heading}</th>)}</tr>
             </thead>
             <tbody>
               {filtered.map((employee) => (
@@ -83,12 +84,13 @@ export default function EmployeeDirectory({ employees }: { employees: EmployeeRo
                   <td className="whitespace-nowrap px-4 py-3">{employee.movement}</td>
                   <td className="whitespace-nowrap px-4 py-3">{employee.project ?? <span className="text-amber-700">Unknown</span>}</td>
                   <td className="whitespace-nowrap px-4 py-3">{employee.reportedStatus}</td>
+                  <td className="whitespace-nowrap px-4 py-3"><span className="rounded-full bg-slate-100 px-2 py-1 text-xs font-semibold">{employee.assessed}</span></td>
                   <td className="px-4 py-3">{employee.risks.length ? <span className="text-amber-700">{employee.risks.length} · {employee.risks[0]}</span> : <span className="text-slate-400">None</span>}</td>
                   <td className="whitespace-nowrap px-4 py-3">{employee.lastUpdate}</td>
                   <td className="whitespace-nowrap px-4 py-3"><Link href={`/employees/${employee.id}`} className="font-medium text-indigo-600 hover:underline">Open case →</Link></td>
                 </tr>
               ))}
-              {filtered.length === 0 && <tr><td colSpan={7} className="px-4 py-12 text-center text-slate-500">No employees match those filters.</td></tr>}
+              {filtered.length === 0 && <tr><td colSpan={8}className="px-4 py-12 text-center text-slate-500">No employees match those filters.</td></tr>}
             </tbody>
           </table>
         </div>

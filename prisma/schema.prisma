@@ -7,199 +7,341 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// Demo login identity. `role` drives permissions; `employeeId` maps employee users to their own case.
 model User {
-  id        String   @id
-  name      String
-  email     String   @unique
-  role      String
-  employee  Employee? @relation(fields: [employeeId], references: [id])
-  employeeId String? @unique
-  audited   AuditLog[]
+  id         String     @id
+  name       String
+  email      String     @unique
+  role       String
+  employee   Employee?  @relation(fields: [employeeId], references: [id])
+  employeeId String?    @unique
+  personId   String?
+  audited    AuditLog[]
+}
+
+// A stakeholder. Only names present in the starter pack are seeded; unknown holders of a role are role-only records (name = null).
+// role: EMPLOYEE | LINE_MANAGER | TECH_LEAD | KT_OWNER | PMO | HR | ACCESS_SUPPORT | APP_OWNER | TECH_MANAGER | MANAGEMENT | PROJECT_MANAGER
+model Person {
+  id          String   @id
+  name        String?
+  role        String
+  projectId   String?
+  project     Project? @relation(fields: [projectId], references: [id])
+  isSimulated Boolean  @default(false)
+  note        String?
 }
 
 model Employee {
-  id          String @id
-  name        String
-  startDate   String
-  movement    String
-  projectId   String?
-  project     Project? @relation(fields: [projectId], references: [id])
-  manager     String?
-  trackerStatus String
-  lastUpdate  String
-  role        String?
+  id              String                @id
+  name            String
+  startDate       String
+  movement        String
+  projectId       String?
+  project         Project?              @relation(fields: [projectId], references: [id])
+  manager         String?
+  lineManagerId   String?
+  trackerStatus   String
+  lastUpdate      String
+  role            String?
   technicalLeadId String?
-  case        OnboardingCase?
-  access      AccessRequest[]
-  activities  KTActivity[]
-  evidence    Evidence[]
-  actions     ActionItem[]
-  assessments ReadinessAssessment[]
-  user        User?
+  isSimulated     Boolean               @default(false)
+  updatedAt       DateTime              @default(now()) @updatedAt
+  case            OnboardingCase?
+  access          AccessRequest[]
+  activities      KTActivity[]
+  evidence        Evidence[]
+  actions         ActionItem[]
+  assessments     ReadinessAssessment[]
+  user            User?
 }
 
 model Project {
-  id        String @id
+  id        String              @id
   name      String
   employees Employee[]
   evidence  Evidence[]
   resources KnowledgeResource[]
+  people    Person[]
 }
 
 model OnboardingCase {
-  id               String @id
-  employeeId       String @unique
-  employee         Employee @relation(fields: [employeeId], references: [id])
-  assessedStatus   String @default("UNKNOWN")
-  validatedStatus  String @default("UNKNOWN")
-  riskFlags        String @default("[]")
-  assessmentReason String?
-  assessmentAt     String?
-  ktOwnerId        String?
-  expectedReadyAt  String?
+  id                String                @id
+  employeeId        String                @unique
+  employee          Employee              @relation(fields: [employeeId], references: [id])
+  assessedStatus    String                @default("UNKNOWN")
+  validatedStatus   String                @default("UNKNOWN")
+  riskFlags         String                @default("[]")
+  assessmentReason  String?
+  assessmentAt      String?
+  ktOwnerId         String?
+  expectedReadyAt   String?
   readinessReviewAt String?
-  findings         Finding[]
-  validations      ReadinessValidation[]
-  actions          ActionItem[]
-  evidence         Evidence[]
+  gatesJson         String                @default("[]")
+  reliability       String?
+  lastRecomputedAt  String?
+  updatedAt         DateTime              @default(now()) @updatedAt
+  findings          Finding[]
+  validations       ReadinessValidation[]
+  actions           ActionItem[]
+  evidence          Evidence[]
+  dependencies      Dependency[]
 }
 
+// status: NOT_REQUESTED | REQUESTED | APPROVAL_PENDING | APPROVED | PROVISIONED | USABLE | REJECTED. Only USABLE satisfies an access gate.
+// Credentials are never stored anywhere.
 model AccessRequest {
-  id            String @id @default(cuid())
-  employeeId    String
-  employee      Employee @relation(fields: [employeeId], references: [id])
-  application   String
-  requiredScope String
-  requestDate   String?
-  owner         String?
-  status        String
-  blockerReason String?
-  evidenceId    String?
-  lastUpdate    String?
-  nextFollowUp  String?
+  id                String   @id @default(cuid())
+  employeeId        String
+  employee          Employee @relation(fields: [employeeId], references: [id])
+  application       String
+  requiredScope     String
+  requestDate       String?
+  owner             String?
+  ownerPersonId     String?
+  handlerRole       String?
+  approverRole      String?
+  required          Boolean  @default(true)
+  status            String
+  blockerReason     String?
+  evidenceId        String?
+  requestEvidenceId String?
+  usableConfirmedAt String?
+  usableEvidenceId  String?
+  lastUpdate        String?
+  nextFollowUp      String?
+  updatedAt         DateTime @default(now()) @updatedAt
 }
 
+// stage: NOT_STARTED | SHADOWING | SUPPORTED_EXECUTION | INDEPENDENT_EXECUTION
+// stageBasis: OBSERVED (technical owner/KT owner) | SELF_REPORTED | REPORTED (tracker/other) | ASSESSMENT | UNKNOWN
+// status: PROPOSED (template/AI, not yet a requirement) | CONFIRMED | REJECTED
 model KTActivity {
-  id              String @id @default(cuid())
-  employeeId      String
-  employee        Employee @relation(fields: [employeeId], references: [id])
-  title           String
-  description     String
-  scope           String
-  owner           String?
-  stage           String @default("NOT_STARTED")
-  evidenceId      String?
-  completionDate  String?
-  validation      String @default("PENDING")
-  requiredForReady Boolean @default(true)
+  id               String   @id @default(cuid())
+  employeeId       String
+  employee         Employee @relation(fields: [employeeId], references: [id])
+  title            String
+  description      String
+  scope            String
+  scopeType        String   @default("CORE")
+  owner            String?
+  ownerPersonId    String?
+  stage            String   @default("NOT_STARTED")
+  stageBasis       String   @default("UNKNOWN")
+  evidenceId       String?
+  completionDate   String?
+  validation       String   @default("PENDING")
+  requiredForReady Boolean  @default(true)
+  requiredApps     String   @default("[]")
+  status           String   @default("CONFIRMED")
+  origin           String   @default("EVIDENCE")
+  originNote       String?
+  updatedAt        DateTime @default(now()) @updatedAt
 }
 
+// Evidence is stored verbatim and never mutated after ingestion.
 model Evidence {
-  id            String @id
-  sourceType    String
-  author        String?
-  timestamp     String
-  content       String
-  employeeId    String?
-  employee      Employee? @relation(fields: [employeeId], references: [id])
-  projectId     String?
-  project       Project? @relation(fields: [projectId], references: [id])
-  caseId        String?
-  case          OnboardingCase? @relation(fields: [caseId], references: [id])
-  title         String
-  sourceRef     String?
-  claims        EvidenceClaim[]
+  id             String          @id
+  sourceType     String
+  author         String?
+  senderRole     String?
+  senderPersonId String?
+  recipients     String          @default("[]")
+  authorityLevel String?
+  timestamp      String
+  content        String
+  employeeId     String?
+  employee       Employee?       @relation(fields: [employeeId], references: [id])
+  projectId      String?
+  project        Project?        @relation(fields: [projectId], references: [id])
+  caseId         String?
+  case           OnboardingCase? @relation(fields: [caseId], references: [id])
+  title          String
+  sourceRef      String?
+  reviewStatus   String          @default("PENDING_REVIEW")
+  inReplyToId    String?
+  isRequest      Boolean         @default(false)
+  ingestedAt     String?
+  ingestedBy     String?
+  isSimulated    Boolean         @default(false)
+  claims         EvidenceClaim[]
 }
 
+// A structured statement proposed from evidence. Approval applies it through a whitelisted field mapper.
 model EvidenceClaim {
-  id              String @id @default(cuid())
+  id              String   @id @default(cuid())
   evidenceId      String
   evidence        Evidence @relation(fields: [evidenceId], references: [id])
   entity          String
   field           String
   extractedValue  String
+  editedValue     String?
   excerpt         String
+  excerptVerified Boolean  @default(false)
   effectiveDate   String?
-  reviewStatus    String @default("PENDING")
+  origin          String   @default("AI")
+  aiRunId         String?
+  reviewStatus    String   @default("PENDING")
+  reviewReason    String?
   reviewerId      String?
   reviewedAt      String?
+  appliedChange   String?
 }
 
+// status: OPEN | PROPOSED (AI, awaiting human) | RESOLVED | DISMISSED
 model Finding {
-  id          String @id
-  caseId      String
-  case        OnboardingCase @relation(fields: [caseId], references: [id])
-  type        String
-  severity    String
-  title       String
-  description String
-  status      String @default("OPEN")
-  evidenceIds String @default("[]")
-  resolvedAt  String?
-  resolution  String?
-  actions     ActionItem[]
+  id                   String       @id
+  caseId               String
+  case                 OnboardingCase @relation(fields: [caseId], references: [id])
+  fingerprint          String?
+  type                 String
+  category             String       @default("OTHER")
+  origin               String       @default("RULE")
+  severity             String
+  title                String
+  description          String
+  status               String       @default("OPEN")
+  evidenceIds          String       @default("[]")
+  facts                String       @default("[]")
+  assumptions          String       @default("[]")
+  rootCauses           String       @default("[]")
+  recommendedActions   String       @default("[]")
+  affectedEntities     String       @default("[]")
+  ownerRole            String?
+  aiRunId              String?
+  aiAnalysis           String?
+  firstDetectedAt      String?
+  lastDetectedAt       String?
+  resolvedAt           String?
+  resolvedBy           String?
+  resolutionType       String?
+  resolution           String?
+  resolutionEvidenceId String?
+  actions              ActionItem[]
+
+  @@unique([caseId, fingerprint])
 }
 
 model ActionItem {
-  id          String @id @default(cuid())
-  caseId      String?
-  case        OnboardingCase? @relation(fields: [caseId], references: [id])
-  employeeId  String?
-  employee    Employee? @relation(fields: [employeeId], references: [id])
-  findingId   String?
-  finding     Finding? @relation(fields: [findingId], references: [id])
-  title       String
-  description String
-  ownerRole   String?
-  ownerName   String?
-  priority    String @default("MEDIUM")
-  dueDate     String?
-  status      String @default("OPEN")
-  evidenceIds String @default("[]")
-  draft       String?
-  resolvedAt  String?
+  id            String          @id @default(cuid())
+  caseId        String?
+  case          OnboardingCase? @relation(fields: [caseId], references: [id])
+  employeeId    String?
+  employee      Employee?       @relation(fields: [employeeId], references: [id])
+  findingId     String?
+  finding       Finding?        @relation(fields: [findingId], references: [id])
+  title         String
+  description   String
+  ownerRole     String?
+  ownerName     String?
+  ownerPersonId String?
+  priority      String          @default("MEDIUM")
+  dueDate       String?
+  status        String          @default("OPEN")
+  evidenceIds   String          @default("[]")
+  draft         String?
+  origin        String          @default("HUMAN")
+  createdBy     String?
+  createdAt     String?
+  resolvedAt    String?
 }
 
 model ReadinessAssessment {
-  id         String @id @default(cuid())
-  employeeId String
-  employee   Employee @relation(fields: [employeeId], references: [id])
-  status     String
+  id          String   @id @default(cuid())
+  employeeId  String
+  employee    Employee @relation(fields: [employeeId], references: [id])
+  status      String
   explanation String
-  evidenceIds String @default("[]")
-  timestamp  String
+  evidenceIds String   @default("[]")
+  gatesJson   String   @default("[]")
+  trigger     String?
+  timestamp   String
 }
 
+// Only a human TECH_LEAD may create these (enforced in src/server/actions/validation.ts). AI modules have no import path to it.
 model ReadinessValidation {
-  id         String @id @default(cuid())
-  caseId     String
-  case       OnboardingCase @relation(fields: [caseId], references: [id])
-  state      String @default("PENDING")
-  reviewerRole String?
-  reviewerName String?
-  evidenceId String?
-  comment    String?
-  timestamp  String?
+  id             String         @id @default(cuid())
+  caseId         String
+  case           OnboardingCase @relation(fields: [caseId], references: [id])
+  state          String         @default("PENDING")
+  validatedLevel String?
+  reviewerRole   String?
+  reviewerName   String?
+  reviewerId     String?
+  evidenceId     String?
+  evidenceIds    String         @default("[]")
+  comment        String?
+  timestamp      String?
 }
 
 model KnowledgeResource {
-  id       String @id
-  title    String
-  projectId String?
-  project  Project? @relation(fields: [projectId], references: [id])
-  owner    String
-  description String
-  location String
-  applicableRoles String @default("[]")
+  id              String   @id
+  title           String
+  projectId       String?
+  project         Project? @relation(fields: [projectId], references: [id])
+  owner           String
+  description     String
+  location        String
+  applicableRoles String   @default("[]")
+  copyAllowed     Boolean  @default(true)
+  sourceEvidenceId String?
+}
+
+// Directed edge in a case's dependency graph (employeeId null = project template).
+// kind: REQUIRES | ENABLES | BLOCKS; status: PROPOSED | CONFIRMED | REJECTED; origin: RULE | TEMPLATE | AI | HUMAN.
+// Only CONFIRMED edges affect calculations.
+model Dependency {
+  id          String          @id @default(cuid())
+  employeeId  String?
+  caseId      String?
+  case        OnboardingCase? @relation(fields: [caseId], references: [id])
+  fromType    String
+  fromId      String
+  toType      String
+  toId        String
+  kind        String          @default("REQUIRES")
+  status      String          @default("PROPOSED")
+  origin      String          @default("TEMPLATE")
+  rationale   String
+  evidenceIds String          @default("[]")
+  excerpts    String          @default("[]")
+  aiRunId     String?
+  confirmedBy String?
+  confirmedAt String?
+  createdAt   String?
+
+  @@unique([employeeId, fromType, fromId, toType, toId])
+}
+
+// AI transparency log: every agent call, cached by inputHash. inputRefs holds IDs only.
+model AIRun {
+  id            String @id @default(cuid())
+  agent         String
+  promptVersion String
+  model         String
+  inputHash     String
+  inputRefs     String @default("[]")
+  employeeId    String?
+  output        String?
+  status        String
+  error         String?
+  durationMs    Int    @default(0)
+  createdAt     String
+
+  @@index([agent, inputHash])
 }
 
 model AuditLog {
-  id        String @id @default(cuid())
-  actorId   String?
-  actor     User? @relation(fields: [actorId], references: [id])
-  action    String
+  id         String  @id @default(cuid())
+  actorId    String?
+  actor      User?   @relation(fields: [actorId], references: [id])
+  actorLabel String?
+  action     String
   entityType String
-  entityId  String
-  details   String
-  timestamp String
+  entityId   String
+  employeeId String?
+  before     String?
+  after      String?
+  evidenceIds String @default("[]")
+  details    String
+  timestamp  String
 }

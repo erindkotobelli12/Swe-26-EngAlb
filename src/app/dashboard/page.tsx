@@ -1,44 +1,103 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
+import { Activity, AlertTriangle, GitCompareArrows, KeyRound, MailQuestion, RefreshCw, Timer, Users } from "lucide-react";
 import { prisma } from "@/lib/db";
-import { detectGaps } from "@/modules/findings/gapEngine";
-import { assessEmployee } from "@/modules/readiness/assessment";
-import { AlertTriangle, Users, ShieldAlert, GitCompareArrows } from "lucide-react";
+import { getSession } from "@/lib/auth";
+import { formatDate, getEvaluationDate } from "@/lib/clock";
+import { headline, kpis, loadPortfolio } from "@/modules/case/portfolio";
+import { can } from "@/modules/permissions";
+import { levelLabel } from "@/modules/readiness/evaluate";
+import { recomputeAllAction } from "@/server/actions/case";
 import DashboardEmployeeTable from "@/components/DashboardEmployeeTable";
+import ActionButton from "@/components/ActionButton";
+import { Card, EmptyState, ProvenanceBadge, SeverityBadge } from "@/components/ui/badges";
 
-export default async function Dashboard(){
-  await detectGaps();
-  const [employees,findings] = await Promise.all([
-    prisma.employee.findMany({include:{project:true,case:true,activities:true}}),
-    prisma.finding.findMany({where:{status:"OPEN"}}),
-  ]);
-  const intervention = findings.filter(f=>["CRITICAL","HIGH"].includes(f.severity)).length;
-  const access = findings.filter(f=>f.type.includes("ACCESS")).length;
-  const stale = findings.filter(f=>f.type==="STALE_UPDATE").length;
-  const conflicts = findings.filter(f=>f.type==="CONFLICTING_READINESS").length;
-  const cards=[
-    ["Total cases",employees.length,Users,"text-indigo-600"],
-    ["Need intervention",intervention,AlertTriangle,"text-amber-600"],
-    ["Access blockers",access,ShieldAlert,"text-red-600"],
-    ["Missing or conflicting",findings.filter(f=>f.type.includes("MISSING")||f.type.includes("CONFLICT")).length,GitCompareArrows,"text-violet-600"],
+const SUBTITLE: Record<string, string> = {
+  PMO: "PMO overview — cross-project blockers, ownership gaps and follow-ups",
+  TECH_LEAD: "Technical Lead overview — KT gaps and pending validations",
+  LINE_MANAGER: "Line Manager overview — local practical blockers",
+  MANAGEMENT: "Management overview — readiness distribution and risk",
+};
+
+export default async function Dashboard() {
+  const session = await getSession();
+  if (session.role === "EMPLOYEE") redirect("/workspace");
+  const [portfolio, runs] = await Promise.all([loadPortfolio(), prisma.aIRun.findMany({ orderBy: { createdAt: "desc" }, take: 5 })]);
+  const k = kpis(portfolio);
+  const cards = [
+    ["Official cases", k.total, Users, "text-indigo-600"],
+    ["Need intervention", k.needIntervention, AlertTriangle, "text-amber-600"],
+    ["Access items not usable", k.accessNotUsable, KeyRound, "text-red-600"],
+    ["Open conflicts", k.conflicts, GitCompareArrows, "text-violet-600"],
+    ["Unanswered requests", k.unanswered, MailQuestion, "text-orange-600"],
+    ["Stale cases", k.stale, Timer, "text-slate-600"],
   ] as const;
-  return <div className="px-5 py-6 md:px-8">
-    <header className="flex flex-wrap items-end justify-between gap-4">
-      <div><p className="text-sm font-medium text-slate-500">PMO overview</p><h1 className="mt-1 text-2xl font-bold">Onboarding command center</h1></div>
-      <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-500">Evaluation date <b className="ml-2 text-slate-800">14 Oct 2026</b></div>
-    </header>
-    <section className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">{cards.map(([label,value,Icon,color])=><div key={label} className="rounded-xl border border-slate-200 bg-white p-4">
-      <div className="flex justify-between"><p className="text-sm font-medium text-slate-500">{label}</p><Icon size={18} className={color}/></div><p className="mt-3 text-3xl font-bold">{value}</p>
-    </div>)}</section>
-    <section className="mt-5 grid gap-5 xl:grid-cols-[1fr_320px]">
-      <div className="xl:col-span-1">
-        <DashboardEmployeeTable employees={employees.map(e=>{
-            const fs=findings.filter(f=>f.caseId===e.case?.id);
-            const risk=fs.length?fs.map(f=>f.severity==="CRITICAL"?"Critical":f.severity==="HIGH"?"High":"Warning").slice(0,2).join(", "):"Clear";
-            const a=assessEmployee({id:e.id,trackerStatus:e.trackerStatus,accessUsable:0,accessRequired:e.id==="ONB-002"?3:0,requiredActivities:0,completedActivities:0,technicalValidation:"PENDING",hasMaterialConflict:e.id==="ONB-005"});
-            return {id:e.id,name:e.name,movement:e.movement,project:e.project?.name??"Unknown",reported:e.trackerStatus,assessed:a.status.replaceAll("_"," "),risk,lastUpdate:e.lastUpdate};
-          })} />
-      </div>
-      <aside className="space-y-5"><div className="rounded-xl border border-slate-200 bg-white p-4"><h2 className="font-bold">Priority actions</h2><div className="mt-3 space-y-3"><Link href="/actions" className="block rounded-lg border-l-4 border-red-500 bg-red-50 p-3"><b className="text-sm">Resolve Eva readiness conflict</b><p className="mt-1 text-xs text-slate-500">Technical Lead review · {conflicts} finding</p></Link><Link href="/actions" className="block rounded-lg border-l-4 border-amber-500 bg-amber-50 p-3"><b className="text-sm">Resolve Leo access blockers</b><p className="mt-1 text-xs text-slate-500">Access owner · 3 requests</p></Link></div></div><div className="rounded-xl border border-slate-200 bg-indigo-950 p-4 text-white"><p className="text-xs font-bold uppercase text-indigo-200">AI evidence summary</p><p className="mt-3 text-sm leading-6">Eva has a material readiness conflict. Leo has active, pending and unprovisioned access accounts. Lina is awaiting a PMO follow-up.</p><Link href="/assistant" className="mt-3 inline-block text-xs font-bold text-indigo-200">Open assistant →</Link></div></aside>
-    </section>
-  </div>;
+  const issues = portfolio
+    .map((c) => ({ c, line: headline(c), top: c.open[0] }))
+    .filter((x): x is typeof x & { line: string } => Boolean(x.line && x.top))
+    .sort((a, b) => ["CRITICAL", "HIGH", "MEDIUM", "LOW"].indexOf(a.top!.severity) - ["CRITICAL", "HIGH", "MEDIUM", "LOW"].indexOf(b.top!.severity));
+
+  return (
+    <div className="px-5 py-6 md:px-8">
+      <header className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <p className="text-sm font-medium text-slate-500">{SUBTITLE[session.role]}</p>
+          <h1 className="mt-1 text-2xl font-bold">Onboarding command center</h1>
+        </div>
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-500">Evaluation date <b className="ml-2 text-slate-800">{formatDate(getEvaluationDate())}</b></div>
+          {can(session, "case.recompute") && <ActionButton action={recomputeAllAction} label="Re-run analysis" pendingLabel="Recomputing…" icon={<RefreshCw size={15} />} variant="secondary" />}
+        </div>
+      </header>
+
+      <section className="mt-6 grid gap-3 sm:grid-cols-3 xl:grid-cols-6">
+        {cards.map(([label, value, Icon, color]) => (
+          <div key={label} className="rounded-xl border border-slate-200 bg-white p-4">
+            <div className="flex justify-between gap-2"><p className="text-xs font-medium text-slate-500">{label}</p><Icon size={17} className={color} /></div>
+            <p className="mt-2 text-3xl font-bold">{value}</p>
+          </div>
+        ))}
+      </section>
+      <p className="mt-2 flex items-center gap-2 text-xs text-slate-500"><ProvenanceBadge state="actual" /> All figures are computed from stored records by deterministic rules; nothing on this page is AI-generated.</p>
+
+      <section className="mt-5 grid gap-5 xl:grid-cols-[1fr_360px]">
+        <DashboardEmployeeTable
+          employees={portfolio.map((c) => ({
+            id: c.state.employee.id, name: c.state.employee.name, movement: c.state.employee.movement, project: c.state.employee.projectName ?? "Unknown",
+            reported: c.readiness.reported, assessed: levelLabel(c.readiness.assessed), validated: c.readiness.validated ? levelLabel(c.readiness.validated) : "Not validated",
+            reliability: null, topIssue: c.open[0]?.title ?? null, topSeverity: c.open[0]?.severity ?? null, lastUpdate: formatDate(c.state.employee.lastUpdate),
+          }))}
+        />
+        <aside className="space-y-5">
+          <Card title="Top issues" actions={<Link href="/investigations" className="text-xs font-bold text-indigo-600">All findings →</Link>}>
+            {issues.length ? (
+              <ol className="space-y-2">
+                {issues.slice(0, 8).map(({ c, line, top }) => (
+                  <li key={c.state.employee.id}>
+                    <Link href={`/employees/${c.state.employee.id}?tab=investigation`} className="block rounded-lg border border-slate-100 p-3 hover:border-indigo-200 hover:bg-indigo-50/40">
+                      <div className="flex items-center justify-between gap-2"><b className="text-sm">{c.state.employee.name}</b><SeverityBadge severity={top!.severity} /></div>
+                      <p className="mt-1 text-xs text-slate-600">{line}</p>
+                      <p className="mt-1 text-[11px] text-slate-400">{c.open.length} open finding(s){c.proposed.length ? ` · ${c.proposed.length} AI proposal(s)` : ""}</p>
+                    </Link>
+                  </li>
+                ))}
+              </ol>
+            ) : <EmptyState title="No open findings" />}
+          </Card>
+          <Card title={<span className="flex items-center gap-2"><Activity size={16} className="text-violet-600" />AI activity</span>} actions={<Link href="/ai-activity" className="text-xs font-bold text-indigo-600">Log →</Link>}>
+            {runs.length ? (
+              <ul className="space-y-2 text-xs">
+                {runs.map((r) => (
+                  <li key={r.id} className="flex items-center justify-between gap-2 rounded-lg bg-slate-50 px-3 py-2">
+                    <span><b className="capitalize">{r.agent.replaceAll("_", " ")}</b> · {r.model}</span>
+                    <span className={r.status === "OK" ? "text-emerald-700" : "text-red-700"}>{r.status.toLowerCase().replaceAll("_", " ")}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : <p className="text-sm text-slate-500">No AI runs yet. AI agents run only when a user asks (Investigate, Extract, Draft…).</p>}
+          </Card>
+        </aside>
+      </section>
+    </div>
+  );
 }
