@@ -50,7 +50,7 @@ npm run dev                        # http://localhost:3000
 | `DATABASE_URL` | `file:./dev.db` | SQLite database (in `prisma/`) |
 | `OLLAMA_BASE_URL` | `http://127.0.0.1:11434` | Must be a loopback URL; anything else is refused so employee data stays local |
 | `AI_MODEL` | `llama3.2:latest` | Default model for all agents |
-| `AI_MODEL_<AGENT>` | — | Per-agent override: `DETECTIVE`, `EXTRACTION`, `DEPENDENCY_SUGGESTION`, `FOLLOWUP_DRAFTING`, `BRIEFING`, `SIMULATOR_EXPLANATION`, `BOTTLENECK_INSIGHTS`, `ASSISTANT` |
+| `AI_MODEL_<AGENT>` | — | Per-agent override: `DETECTIVE`, `EXTRACTION`, `DEPENDENCY_SUGGESTION`, `FOLLOWUP_DRAFTING`, `BRIEFING`, `SIMULATOR_EXPLANATION`, `ROADMAP`, `BOTTLENECK_INSIGHTS`, `ASSISTANT` |
 | `AI_TIMEOUT_MS` | `180000` | Per-call timeout |
 | `OLLAMA_STRUCTURED_OUTPUTS` | `true` | Send JSON Schema in `format` (set `false` for very old Ollama versions) |
 | `DEMO_EVALUATION_DATE` | `2026-10-14` | The single evaluation clock |
@@ -75,7 +75,7 @@ The e2e global setup re-seeds the dev database, because the journey changes data
 | Area | What it does |
 |---|---|
 | **Dashboard** | Data-driven KPIs, top issue per case, AI activity. |
-| **Case hub** `/employees/[id]` | **Overview**: reported / assessed / validated readiness, reliability, 10 gates, §6 checklist, access, KT, stakeholders, TL validation.<br>**Investigation**: rule findings and AI Detective proposals, side-by-side conflicts.<br>**Dependency map** (React Flow).<br>**Simulator**.<br>**Evidence & reliability**: verbatim sources, claims and review.<br>**Follow-ups**.<br>**History**: audit trail. |
+| **Case hub** `/employees/[id]` | **Overview**: reported / assessed / validated readiness, reliability, 10 gates, §6 checklist, access, KT, stakeholders, TL validation.<br>**Investigation**: rule findings and AI Detective proposals, side-by-side conflicts.<br>**Dependency map** (React Flow).<br>**Simulator**.<br>**Roadmap**: deterministic three-phase plan, AI adjustments for approval, approved baseline with diff.<br>**Evidence & reliability**: verbatim sources, claims and review.<br>**Follow-ups**.<br>**History**: audit trail. |
 | **Investigations** | Cross-case findings queue; "Investigate all open cases". |
 | **Follow-Up Center** | One consolidated message per stakeholder; escalation recommendations; edit → approve → send (simulated) → record response. |
 | **Briefing** | Role-specific daily briefing (PMO, Technical Lead, Management, Line Manager); every statement referenced; Markdown or print export. |

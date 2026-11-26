@@ -22,9 +22,13 @@ import DependencySuggestions from "@/components/map/DependencySuggestions";
 import Simulator from "@/components/simulator/Simulator";
 import { buildMapData } from "@/modules/dependencies/viewModel";
 import { loadFollowUpQueue } from "@/modules/followups/service";
+import { buildBackbone, diffBackbone, type BaselineEntry } from "@/modules/roadmap/backbone";
+import { deciderPermission } from "@/modules/roadmap/service";
+import RoadmapTimeline from "@/components/roadmap/RoadmapTimeline";
+import { BaselineButton, SuggestRoadmapButton } from "@/components/roadmap/RoadmapControls";
 import { availableToggles, simulate } from "@/modules/simulator/simulate";
 import { overridesFrom, presetChoice } from "@/modules/simulator/choices";
-import { levelLabel } from "@/modules/readiness/evaluate";
+import { levelLabel, type ReadinessResult } from "@/modules/readiness/evaluate";
 import ReliabilityBadge from "@/components/ui/ReliabilityBadge";
 import { classifyAccess, classifyCaseStatus, classifyKT } from "@/modules/reliability/classify";
 import HistoryTimeline from "@/components/case/HistoryTimeline";
@@ -128,6 +132,7 @@ export default async function EmployeeCase({ params, searchParams }: { params: P
         )}
         {tab === "history" && <HistoryTab employeeId={id} />}
         {tab === "followups" && <FollowUpsTab employeeId={id} />}
+        {tab === "roadmap" && <RoadmapTab state={state} readiness={readiness} session={session} />}
       </div>
     </div>
   );
@@ -190,6 +195,32 @@ async function EvidenceTab({ employeeId, session }: { employeeId: string; sessio
         />
       ))}
       {project.length > 0 && <><h2 className="pt-2 font-bold">Project-level evidence</h2>{project.map((e) => <EvidenceCard key={e.id} e={e} />)}</>}
+    </div>
+  );
+}
+
+async function RoadmapTab({ state, readiness, session }: { state: CaseState; readiness: ReadinessResult; session: Awaited<ReturnType<typeof getSession>> }) {
+  const [rows, caseRow] = await Promise.all([
+    prisma.roadmapItem.findMany({ where: { employeeId: state.employee.id }, orderBy: { createdAt: "asc" } }),
+    prisma.onboardingCase.findUniqueOrThrow({ where: { id: state.caseId }, select: { roadmapBaselineJson: true, roadmapBaselineAt: true, roadmapBaselineBy: true } }),
+  ]);
+  const backbone = buildBackbone(state, readiness);
+  const baseline = parseJson<BaselineEntry[] | null>(caseRow.roadmapBaselineJson, null);
+  const diff = baseline ? diffBackbone(baseline, backbone) : [];
+  const canPlan = session.role === "PMO" || session.role === "TECH_LEAD";
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <p className="max-w-3xl text-sm text-slate-600"><ProvenanceBadge state="actual" /> The backbone is derived from the case state, gates and dependency map, so it adapts when an approved change updates the case. <ProvenanceBadge state="proposed" /> AI adjustments need a Technical Lead (KT, alternatives, skips) or PMO (logistics) decision.</p>
+        <div className="flex flex-wrap items-start gap-2">{can(session, "ai.run") && <SuggestRoadmapButton employeeId={state.employee.id} />}{canPlan && <BaselineButton employeeId={state.employee.id} />}</div>
+      </div>
+      <Card title="Changes since the last approved version">
+        {!baseline ? <p className="text-sm text-slate-500">No baseline approved yet. Approve the current plan to track how it adapts.</p>
+          : diff.length ? <ul className="space-y-1 text-sm" data-testid="roadmap-diff">{diff.map((d) => <li key={d.key}><b>{d.title}</b>: {d.before.toLowerCase().replaceAll("_", " ")} → {d.after.toLowerCase().replaceAll("_", " ")}</li>)}</ul>
+          : <p className="text-sm text-slate-500">No changes since the baseline approved by {caseRow.roadmapBaselineBy} on {formatDate(caseRow.roadmapBaselineAt)}.</p>}
+      </Card>
+      <RoadmapTimeline backbone={backbone} canDecide={(kind) => can(session, deciderPermission(kind))}
+        extras={rows.map((r) => ({ id: r.id, type: r.type, kind: r.kind, phase: r.phase, title: r.title, description: r.description, ownerRole: r.ownerRole, completionCriteria: r.completionCriteria, relatesToKey: r.relatesToKey, rationale: r.rationale, evidenceIds: parseJson(r.evidenceIds, [] as string[]), status: r.status, origin: r.origin, decidedBy: r.decidedBy }))} />
     </div>
   );
 }

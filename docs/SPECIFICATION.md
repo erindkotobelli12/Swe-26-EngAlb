@@ -69,6 +69,8 @@ Enforced server-side in every action (`src/modules/permissions.ts`). "own" means
 | **Record readiness validation** | | **✓** | | | |
 | Edit / approve / send (simulated) follow-ups | ✓ | | | | |
 | Record a follow-up response | ✓ | | | | |
+| Approve KT / alternative / skip roadmap items | | ✓ | | | |
+| Approve logistics / ownership roadmap items | ✓ | | | | |
 | Run AI agents (investigate, suggest, extract, draft) | ✓ | ✓ | | | |
 | Run what-if simulations | ✓ | ✓ | ✓ | ✓ | own |
 | Generate a briefing | ✓ | ✓ | ✓ | ✓ | |

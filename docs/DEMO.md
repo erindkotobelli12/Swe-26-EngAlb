@@ -32,7 +32,7 @@ Onboarding status lives in a tracker, emails and chats. Trackers say "On Track" 
 ## 3. Dependency map (60 s)
 
 - Proposed (dashed) template edges: **Helix → Practical ticket-handling KT → Independent execution**. Proposed edges do not propagate yet.
-- Switch to **Technical Lead** and confirm both edges. The KT node, *Independent execution* and *Technical validation* turn **Blocked**. Helix is the **root blocker**.
+- Switch to **Technical Lead** and confirm both edges (then, on the Roadmap tab, **Approve current plan as baseline**). The KT node, *Independent execution* and *Technical validation* turn **Blocked**. Helix is the **root blocker**.
 - Click Helix to see its downstream impact, evidence and owner. Show "Simulate resolving this".
 
 ## 4. Simulator (50 s)
@@ -55,7 +55,9 @@ Onboarding status lives in a tracker, emails and chats. Trackers say "On Track" 
 - Record: "Helix Service Desk has now been provisioned. Leo logged in successfully this morning."
 - In Leo's Evidence tab the response is stored verbatim, pending review. Click **Extract claims (AI)**, or add the claim manually with the verbatim excerpt "Leo logged in successfully".
 - **Approve** the claim. The 9-step **evidence pipeline** appears: state update Helix → USABLE; *Practical ticket-handling KT* unblocked; assessed level Blocked → Pre-onboarding; findings cleared.
-- Map: Helix is green. **History** shows every step with before/after values.
+- Map: Helix is green.
+- **Roadmap**: "changes since the last approved version" shows *Helix → done* and *ticket-handling KT blocked → to do*. Optionally click **Suggest adjustments (AI)** for alternatives while waiting, which the TL approves.
+- **History** shows every step with before/after values.
 
 ## 7. Eva — the conflict (45 s)
 
@@ -82,7 +84,7 @@ Onboarding status lives in a tracker, emails and chats. Trackers say "On Track" 
 1. **Problem**: tracker status ≠ evidence. Access "provisioned" ≠ usable. "Closed" ≠ ready.
 2. **Decision supported**: "Is this person ready for the agreed scope? If not, what blocks it, who acts, in which order?"
 3. **Architecture**: evidence → claims → state → rules → AI proposals → human approval → audit. Local loopback LLM.
-4. **Agents**: Detective, Dependency Suggestion, Extraction, Follow-Up Drafting, Briefing, Simulator Explanation, Bottleneck Insight, Assistant. Responsibilities and guards (docs/AGENTS.md).
+4. **Agents**: Detective, Dependency Suggestion, Extraction, Follow-Up Drafting, Roadmap, Briefing, Simulator Explanation, Bottleneck Insight, Assistant. Responsibilities and guards (docs/AGENTS.md).
 5. **Purposeful AI**: semantics and drafting only. Rules decide. Every claim is a verbatim excerpt. Failures are visible.
 6. **Live demo**: Leo (access blocker) → Eva (conflict) → Lina (follow-up).
 7. **What is simulated / limitations / next improvement** (docs/LIMITATIONS.md).

@@ -20,11 +20,12 @@ Historical metrics on actual data show "Insufficient data (n = 0–1)". The star
 
 The brief listed ten advanced features. The following were **not** built. They are hidden (their case tabs are disabled in `src/config/caseTabs.ts`), never shown half-built:
 
-- **P1-4 Adaptive onboarding roadmap** (Roadmap Agent, timeline, roadmap approvals).
 - **P1-5 KT assessments** (training materials, Assessment Agent, grading, progress chart). The gate engine already guarantees that assessment results can never satisfy execution or validation (`stageBasis = ASSESSMENT` is ignored; tested).
 - **P2-10 "full twin" map mode** (people and evidence nodes) and "view state as of date". The case hub's Overview + History + embedded map / simulator / reliability already form the integrated view, and the evidence pipeline's 9 steps are shown live after each claim approval.
 
-Reason: three P0 features plus reliability, follow-ups, the briefing and bottleneck insights were completed end to end, connected through the case hub and covered by the e2e journey. That was preferred over shallow versions of every feature.
+Roadmap simplification: phases are relative ("Week 1", "Weeks 2–3", "Week 4"), not calendar dates, because no agreed readiness dates exist. Competencies are not modelled, so skip proposals are accepted only with explicit supporting evidence.
+
+Reason: three P0 features plus reliability, follow-ups, the roadmap, the briefing and bottleneck insights were completed end to end, connected through the case hub and covered by the e2e journey. That was preferred over shallow versions of every feature.
 
 ## Model and data limits
 
@@ -42,7 +43,7 @@ Reason: three P0 features plus reliability, follow-ups, the briefing and bottlen
 
 ## Next improvements
 
-1. Roadmap and KT assessments on top of the existing gate and permission model.
+1. KT assessments (generated only from approved or simulated training materials) on top of the existing gate and permission model, plus a competency model for evidence-based roadmap skips.
 2. Historical bottleneck metrics on real data once enough completed cases with timestamps exist (the minimum-sample gate is already in place).
 3. Real integrations: ITSM for access status, Teams/Outlook for sending, with the same approval gate.
 4. Per-project template management by PMO and Technical Leads (replacing the simulated template).

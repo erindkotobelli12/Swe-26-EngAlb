@@ -11,7 +11,7 @@ export const CASE_TABS: { id: CaseTabId; label: string; enabled: boolean; roles?
   { id: "investigation", label: "Investigation", enabled: true },
   { id: "map", label: "Dependency map", enabled: true },
   { id: "simulator", label: "Simulator", enabled: true },
-  { id: "roadmap", label: "Roadmap", enabled: false },
+  { id: "roadmap", label: "Roadmap", enabled: true },
   { id: "evidence", label: "Evidence & reliability", enabled: true },
   { id: "assessments", label: "Assessments", enabled: false },
   { id: "followups", label: "Follow-ups", enabled: true, roles: ["PMO", "TECH_LEAD", "LINE_MANAGER", "MANAGEMENT"] },

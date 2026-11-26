@@ -1,6 +1,6 @@
 # Agent and component specifications
 
-OnboardIQ separates **deterministic engines** (rules that decide) from **LLM agents** (models that read, explain and draft). There are eight agents. Every one exists in code, runs on a local Ollama model, and is logged in the `AIRun` table (agent, model, prompt version, input hash, input IDs only, output, status, duration), visible on the **AI activity** page.
+OnboardIQ separates **deterministic engines** (rules that decide) from **LLM agents** (models that read, explain and draft). There are nine agents. Every one exists in code, runs on a local Ollama model, and is logged in the `AIRun` table (agent, model, prompt version, input hash, input IDs only, output, status, duration), visible on the **AI activity** page.
 
 Common to every agent:
 
@@ -125,7 +125,20 @@ flowchart LR
 | **Guards after** | `referencedChanges` is filtered to entries that exist in the diff. The narrative is labelled **Simulated** and AI-written. |
 | **Human validation** | None needed: nothing is written to the case. |
 
-## 7. Bottleneck Insight Agent
+## 7. Roadmap Agent
+
+| | |
+|---|---|
+| **Responsibility** | Personalise one employee's onboarding plan on top of the deterministic backbone: alternatives while an item is pending or blocked (e.g. shadowing while Helix is pending), extra activities the sources justify, and skips of redundant training when a competency is already validated (reallocations). |
+| **Trigger** | **Suggest adjustments (AI)** on the case Roadmap tab. |
+| **Inputs** | Movement type, project, the backbone (key, title, status, waits-for) from `src/modules/roadmap/backbone.ts`, open finding titles, and the case's verbatim sources. |
+| **Output schema** | `RoadmapSchema` in `src/ai/prompts/roadmap.ts`: `proposals[] {type (ALTERNATIVE / ADD / SKIP), kind, phase, title, description, ownerRole, completionCriteria, relatesToKey, rationale, evidenceIds}`. |
+| **Prompt** | `src/ai/prompts/roadmap.ts`, `roadmap@2026-11-26.1`. |
+| **Guards after** | `relatesToKey` must be a backbone key and cited sources must exist. A SKIP needs a KT item and supporting evidence. An ALTERNATIVE must relate to an item that is not done. An ADD must not duplicate a plan item. Duplicates are refused. Survivors are stored as `RoadmapItem` with status **PROPOSED**. |
+| **Human validation** | KT, alternative and skip items: **Technical Lead**. Logistics and ownership items: **PMO**. Approving an ADD of kind KT creates an agreed KT requirement (feeds gates and the map). Approving a SKIP rejects that KT requirement. Alternatives are plan items only. |
+| **Interactions** | The backbone is derived from gates and the dependency graph, so an approved state change adapts it automatically. Step 7 of the evidence pipeline and the "changes since the last approved version" panel show the diff against the baseline a TL or PMO approved. Nothing changes silently. |
+
+## 8. Bottleneck Insight Agent
 
 | | |
 |---|---|
@@ -138,7 +151,7 @@ flowchart LR
 | **Human validation** | Informational. Nothing changes state. |
 | **Interactions** | Reads the deterministic aggregations. Simulated history is never sent to it. |
 
-## 8. Contextual Assistant
+## 9. Contextual Assistant
 
 | | |
 |---|---|
@@ -164,6 +177,7 @@ flowchart LR
 | **Reliability** | `src/modules/reliability/classify.ts` | Precedence: Conflicting → Insufficient evidence → Outdated → Unverified → Verified → Well-supported. Uses the source authority matrix (`src/domain/authority.ts`), recency and human verification. Always returns reasons and source IDs. Requests never support a status. |
 | **Follow-up engine** | `src/modules/followups/candidates.ts` | Routing: access items go to the request handler, with an approval also sent to the approver. Findings route by type (TL for technical, LM for logistics/status, request recipient for unanswered requests). Unresolvable owners go to the PMO as "identify owner". One group per stakeholder. Reminder at `REMINDER_AFTER_DAYS`; escalation **recommended** at `ESCALATE_AFTER_DAYS`. Priority = impact×5 + severity points + overdue days×2 + escalation level×10, with the breakdown shown. |
 | **Briefing selection** | `src/modules/briefing/select.ts` | Role → sections, each statement with refs. Diff against the previous briefing's snapshot. |
+| **Roadmap backbone** | `src/modules/roadmap/backbone.ts` | Three phases (prerequisites → KT → readiness). Items come from scope, owners, each required access item, each KT activity, the readiness date, observed execution and validation. Status (done / in progress / blocked / to do / unknown) and "waits for" come from the gates and the dependency graph. `diffBackbone` compares the plan with the approved baseline. |
 | **Organisational aggregations** | `src/modules/insights/aggregate.ts` | Counts over official cases, each keeping the case IDs it counts. Historical metrics (time to usable access, time to validated readiness, human blocker-resolution time) are computed only where both timestamps exist, and withheld as "Insufficient data (n = X)" below `MIN_SAMPLE_SIZE` (5). Simulated history (`SIM-0xx`) is a separate, labelled dataset shown only behind a toggle. |
 | **Permissions** | `src/modules/permissions.ts` | Role × action matrix enforced in every server action (see `SPECIFICATION.md`). |
 | **Recompute** | `src/modules/case/recompute.ts` | The only writer of rule findings and readiness snapshots: template proposals → detectors (idempotent by fingerprint; human decisions never overwritten; conflicts never auto-resolved) → gates and level → reliability → `ReadinessAssessment` history → `STATE_RECOMPUTED` audit entry. |

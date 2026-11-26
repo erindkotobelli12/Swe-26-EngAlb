@@ -84,7 +84,7 @@ Key columns:
 | `Dependency` | `fromType/fromId → toType/toId`, `status` (PROPOSED / CONFIRMED / REJECTED), `origin` (RULE / TEMPLATE / AI / HUMAN), `rationale`, `excerpts` |
 | `AIRun` | `agent`, `promptVersion`, `model`, `inputHash`, `inputRefs` (IDs only), `output`, `status`, `durationMs` |
 
-All schema changes are Prisma migrations: `init`, `decision_support_foundation`, `followup_communications`, `management_briefing`.
+All schema changes are Prisma migrations: `init`, `decision_support_foundation`, `followup_communications`, `management_briefing`, `adaptive_roadmap`.
 
 ## AI privacy design
 

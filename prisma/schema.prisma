@@ -78,6 +78,9 @@ model OnboardingCase {
   readinessReviewAt String?
   gatesJson         String                @default("[]")
   reliability       String?
+  roadmapBaselineJson String?
+  roadmapBaselineAt   String?
+  roadmapBaselineBy   String?
   lastRecomputedAt  String?
   updatedAt         DateTime              @default(now()) @updatedAt
   findings          Finding[]
@@ -341,6 +344,30 @@ model Communication {
   sentAt                   String?
   respondedAt              String?
   closedAt                 String?
+}
+
+// A roadmap proposal or approved plan item on top of the deterministic backbone.
+// type: ADD | ALTERNATIVE | SKIP; kind: KT | ALTERNATIVE | LOGISTICS | OWNERSHIP; status: PROPOSED | APPROVED | REJECTED.
+model RoadmapItem {
+  id                 String  @id @default(cuid())
+  employeeId         String
+  type               String
+  kind               String
+  phase              Int
+  title              String
+  description        String
+  ownerRole          String
+  completionCriteria String
+  relatesToKey       String?
+  rationale          String
+  evidenceIds        String  @default("[]")
+  status             String  @default("PROPOSED")
+  origin             String  @default("AI")
+  aiRunId            String?
+  createdAt          String
+  decidedBy          String?
+  decidedAt          String?
+  decisionReason     String?
 }
 
 // A role-specific management briefing. Every statement carries refs (finding:/evidence:/action:) validated server-side.

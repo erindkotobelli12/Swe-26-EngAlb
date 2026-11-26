@@ -48,6 +48,11 @@ test("3. Confirming the proposed Helix path turns downstream nodes blocked", asy
   await expect(page.locator('[data-node-key="gate:TECH_VALIDATION_APPROVED"]')).toHaveAttribute("data-display", "BLOCKED");
   await page.locator('[data-node-key="access:ACC-LEO-HELIX"]').click();
   await expect(page.getByTestId("node-panel")).toContainText("Root blocker");
+
+  await page.goto("/employees/ONB-002?tab=roadmap");
+  await expect(page.locator('[data-plan="kt:KT-ONB-002-TPL-SERVICE-DESK"]')).toHaveAttribute("data-status", "BLOCKED");
+  await page.getByRole("button", { name: "Approve current plan as baseline" }).click();
+  await expect(page.getByText(/No changes since the baseline approved by/)).toBeVisible();
 });
 
 test("4. Simulator: Helix usable + Orion approved changes the simulated level; actual record unchanged", async ({ page }) => {
@@ -107,12 +112,16 @@ test("6. Record the response; approving its claim makes Helix usable and the pip
   await expect(steps).toContainText("4. State update");
   await expect(steps).toContainText("USABLE");
   await expect(steps).toContainText("Unblocked: Practical ticket-handling KT");
+  await expect(steps).toContainText("Plan adapted: Usable access: Helix Service Desk in progress → done");
 
   await page.goto("/employees/ONB-002");
   await expect(page.locator('[data-access="Helix Service Desk"]')).toHaveAttribute("data-status", "USABLE");
   await expect(page.getByTestId("assessed-level")).toHaveText("Pre-onboarding");
   await page.goto("/employees/ONB-002?tab=map");
   await expect(page.locator('[data-node-key="access:ACC-LEO-HELIX"]')).toHaveAttribute("data-display", "SATISFIED");
+  await page.goto("/employees/ONB-002?tab=roadmap");
+  await expect(page.getByTestId("roadmap-diff")).toContainText("Usable access: Helix Service Desk: in progress → done");
+  await expect(page.getByTestId("roadmap-diff")).toContainText("Practical ticket-handling KT: blocked → todo");
   await page.goto("/employees/ONB-002?tab=history");
   await expect(page.getByText("pipeline run").first()).toBeVisible();
   await expect(page.getByText("claim approved").first()).toBeVisible();

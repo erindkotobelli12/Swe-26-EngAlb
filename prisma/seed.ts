@@ -21,6 +21,7 @@ async function main() {
     await prisma.aIRun.deleteMany();
     await prisma.communication.deleteMany();
     await prisma.briefing.deleteMany();
+    await prisma.roadmapItem.deleteMany();
     await prisma.dependency.deleteMany();
     await prisma.actionItem.deleteMany();
     await prisma.readinessValidation.deleteMany();
