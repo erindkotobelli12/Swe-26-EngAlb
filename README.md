@@ -50,7 +50,7 @@ npm run dev                        # http://localhost:3000
 | `DATABASE_URL` | `file:./dev.db` | SQLite database (in `prisma/`) |
 | `OLLAMA_BASE_URL` | `http://127.0.0.1:11434` | Must be a loopback URL; anything else is refused so employee data stays local |
 | `AI_MODEL` | `llama3.2:latest` | Default model for all agents |
-| `AI_MODEL_<AGENT>` | — | Per-agent override: `DETECTIVE`, `EXTRACTION`, `DEPENDENCY_SUGGESTION`, `FOLLOWUP_DRAFTING`, `BRIEFING`, `SIMULATOR_EXPLANATION`, `ASSISTANT` |
+| `AI_MODEL_<AGENT>` | — | Per-agent override: `DETECTIVE`, `EXTRACTION`, `DEPENDENCY_SUGGESTION`, `FOLLOWUP_DRAFTING`, `BRIEFING`, `SIMULATOR_EXPLANATION`, `BOTTLENECK_INSIGHTS`, `ASSISTANT` |
 | `AI_TIMEOUT_MS` | `180000` | Per-call timeout |
 | `OLLAMA_STRUCTURED_OUTPUTS` | `true` | Send JSON Schema in `format` (set `false` for very old Ollama versions) |
 | `DEMO_EVALUATION_DATE` | `2026-10-14` | The single evaluation clock |
@@ -79,6 +79,7 @@ The e2e global setup re-seeds the dev database, because the journey changes data
 | **Investigations** | Cross-case findings queue; "Investigate all open cases". |
 | **Follow-Up Center** | One consolidated message per stakeholder; escalation recommendations; edit → approve → send (simulated) → record response. |
 | **Briefing** | Role-specific daily briefing (PMO, Technical Lead, Management, Line Manager); every statement referenced; Markdown or print export. |
+| **Insights** | Organisation-wide bottlenecks (applications not usable, where access waits, findings by project/category, missing responsibilities); AI root-cause hypotheses citing the figures; historical metrics withheld below n = 5; optional, clearly labelled simulated history. |
 | **Evidence inbox** | Add evidence verbatim, extract claims with AI or by hand, approve/edit/reject, live 9-step pipeline result. |
 | **My workspace** | Employee view (Mila, Leo): own journey; confirm own successful login. |
 | **Assistant** | Questions over the records, with verified citations. |

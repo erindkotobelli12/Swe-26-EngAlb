@@ -222,9 +222,11 @@ export function propagate(nodes: GraphNode[], allEdges: GraphEdge[], includeProp
     const isBlocked = blockedBy.has(n.key);
     const display: DisplayState = n.satisfaction === "SATISFIED" ? "SATISFIED" : isBlocked ? "BLOCKED" : n.satisfaction === "UNKNOWN" ? "UNKNOWN" : "IN_PROGRESS";
     const isRootBlocker = !satisfied(n.key) && !isBlocked && (downstreamImpact.get(n.key) ?? []).some((k) => blockedBy.get(k)?.includes(n.key) || blockedBy.has(k));
-    return { ...n, display, isRootBlocker: isRootBlocker && n.type !== "readiness", blockedBy: blockedBy.get(n.key) ?? [], downstreamImpact: downstreamImpact.get(n.key) ?? [] };
+    // Gates and the final node are checklist items, not work items: only access, KT and blocker nodes are flagged as root blockers.
+    const workItem = n.type !== "readiness" && n.type !== "gate";
+    return { ...n, display, isRootBlocker: isRootBlocker && workItem, blockedBy: blockedBy.get(n.key) ?? [], downstreamImpact: downstreamImpact.get(n.key) ?? [] };
   });
-  const rootBlockers = results.filter((r) => r.isRootBlocker && minimalSet.has(r.key) && r.type !== "gate").map((r) => r.key);
+  const rootBlockers = results.filter((r) => r.isRootBlocker && minimalSet.has(r.key)).map((r) => r.key);
 
   return { nodes: results, edges, usedProposed: includeProposed, minimalPrerequisites: minimal, recommendedOrder: order, rootBlockers };
 }

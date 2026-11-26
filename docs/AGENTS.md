@@ -1,6 +1,6 @@
 # Agent and component specifications
 
-OnboardIQ separates **deterministic engines** (rules that decide) from **LLM agents** (models that read, explain and draft). Every agent below exists in code, runs on a local Ollama model, and is logged in the `AIRun` table (agent, model, prompt version, input hash, input IDs only, output, status, duration), visible on the **AI activity** page.
+OnboardIQ separates **deterministic engines** (rules that decide) from **LLM agents** (models that read, explain and draft). There are eight agents. Every one exists in code, runs on a local Ollama model, and is logged in the `AIRun` table (agent, model, prompt version, input hash, input IDs only, output, status, duration), visible on the **AI activity** page.
 
 Common to every agent:
 
@@ -125,7 +125,20 @@ flowchart LR
 | **Guards after** | `referencedChanges` is filtered to entries that exist in the diff. The narrative is labelled **Simulated** and AI-written. |
 | **Human validation** | None needed: nothing is written to the case. |
 
-## 7. Contextual Assistant
+## 7. Bottleneck Insight Agent
+
+| | |
+|---|---|
+| **Responsibility** | Propose root-cause *hypotheses* and process-improvement recommendations from organisation-wide aggregated figures. |
+| **Trigger** | **Generate hypotheses** on `/insights`. |
+| **Inputs** | Aggregated figures only, each with a stable key, label, value and the case IDs it counts. Built by `src/modules/insights/aggregate.ts`; examples: applications not usable, where access waits, findings by project and category, missing responsibilities, unanswered requests by recipient. |
+| **Output schema** | `InsightSchema` in `src/ai/prompts/insights.ts`: `hypotheses[] {hypothesis, recommendation, figureKeys[] (≥1), caseIds[]}`. |
+| **Prompt** | `src/ai/prompts/insights.ts`, `bottleneck-insights@2026-11-26.1`. It must not claim trends or statistics from ten cases. |
+| **Guards after** | A hypothesis is kept only if every `figureKey` exists and every `caseId` is counted by one of the cited figures. Others are rejected and counted. The output is shown as "Hypothesis", not stored as a finding. |
+| **Human validation** | Informational. Nothing changes state. |
+| **Interactions** | Reads the deterministic aggregations. Simulated history is never sent to it. |
+
+## 8. Contextual Assistant
 
 | | |
 |---|---|
@@ -151,5 +164,6 @@ flowchart LR
 | **Reliability** | `src/modules/reliability/classify.ts` | Precedence: Conflicting → Insufficient evidence → Outdated → Unverified → Verified → Well-supported. Uses the source authority matrix (`src/domain/authority.ts`), recency and human verification. Always returns reasons and source IDs. Requests never support a status. |
 | **Follow-up engine** | `src/modules/followups/candidates.ts` | Routing: access items go to the request handler, with an approval also sent to the approver. Findings route by type (TL for technical, LM for logistics/status, request recipient for unanswered requests). Unresolvable owners go to the PMO as "identify owner". One group per stakeholder. Reminder at `REMINDER_AFTER_DAYS`; escalation **recommended** at `ESCALATE_AFTER_DAYS`. Priority = impact×5 + severity points + overdue days×2 + escalation level×10, with the breakdown shown. |
 | **Briefing selection** | `src/modules/briefing/select.ts` | Role → sections, each statement with refs. Diff against the previous briefing's snapshot. |
+| **Organisational aggregations** | `src/modules/insights/aggregate.ts` | Counts over official cases, each keeping the case IDs it counts. Historical metrics (time to usable access, time to validated readiness, human blocker-resolution time) are computed only where both timestamps exist, and withheld as "Insufficient data (n = X)" below `MIN_SAMPLE_SIZE` (5). Simulated history (`SIM-0xx`) is a separate, labelled dataset shown only behind a toggle. |
 | **Permissions** | `src/modules/permissions.ts` | Role × action matrix enforced in every server action (see `SPECIFICATION.md`). |
 | **Recompute** | `src/modules/case/recompute.ts` | The only writer of rule findings and readiness snapshots: template proposals → detectors (idempotent by fingerprint; human decisions never overwritten; conflicts never auto-resolved) → gates and level → reliability → `ReadinessAssessment` history → `STATE_RECOMPUTED` audit entry. |

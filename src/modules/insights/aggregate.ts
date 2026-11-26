@@ -49,10 +49,11 @@ export function aggregate(portfolio: PortfolioCase[], knowledge: { id: string; t
     return { key: role ?? "UNOWNED", label: role ? `${roleLabel(role)} (${a.status === "APPROVAL_PENDING" ? "approval" : a.status === "PROVISIONED" ? "use confirmation" : "provisioning"})` : "No owner recorded", caseId: c.state.employee.id };
   }));
   const open = portfolio.flatMap((c) => c.open.map((f) => ({ c, f })));
+  const byValue = (a: Bar, b: Bar) => b.value - a.value || a.label.localeCompare(b.label);
   const findingsByProject = group(open.map(({ c }) => ({ key: c.state.employee.projectName ?? "No project", label: c.state.employee.projectName ?? "No project recorded", caseId: c.state.employee.id })))
-    .map((b) => ({ ...b, value: open.filter(({ c }) => (c.state.employee.projectName ?? "No project") === b.key).length, detail: "open findings" }));
+    .map((b) => ({ ...b, value: open.filter(({ c }) => (c.state.employee.projectName ?? "No project") === b.key).length, detail: "open findings" })).sort(byValue);
   const findingsByCategory = group(open.map(({ c, f }) => ({ key: f.category, label: f.category.toLowerCase().replaceAll("_", " "), caseId: c.state.employee.id })))
-    .map((b) => ({ ...b, value: open.filter(({ f }) => f.category === b.key).length, detail: "open findings" }));
+    .map((b) => ({ ...b, value: open.filter(({ f }) => f.category === b.key).length, detail: "open findings" })).sort(byValue);
 
   const missing: { key: string; label: string; caseId: string }[] = [];
   for (const c of portfolio) {

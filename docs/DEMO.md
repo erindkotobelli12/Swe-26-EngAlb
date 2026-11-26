@@ -82,7 +82,7 @@ Onboarding status lives in a tracker, emails and chats. Trackers say "On Track" 
 1. **Problem**: tracker status ≠ evidence. Access "provisioned" ≠ usable. "Closed" ≠ ready.
 2. **Decision supported**: "Is this person ready for the agreed scope? If not, what blocks it, who acts, in which order?"
 3. **Architecture**: evidence → claims → state → rules → AI proposals → human approval → audit. Local loopback LLM.
-4. **Agents**: Detective, Dependency Suggestion, Extraction, Follow-Up Drafting, Briefing, Simulator Explanation, Assistant. Responsibilities and guards (docs/AGENTS.md).
+4. **Agents**: Detective, Dependency Suggestion, Extraction, Follow-Up Drafting, Briefing, Simulator Explanation, Bottleneck Insight, Assistant. Responsibilities and guards (docs/AGENTS.md).
 5. **Purposeful AI**: semantics and drafting only. Rules decide. Every claim is a verbatim excerpt. Failures are visible.
 6. **Live demo**: Leo (access blocker) → Eva (conflict) → Lina (follow-up).
 7. **What is simulated / limitations / next improvement** (docs/LIMITATIONS.md).

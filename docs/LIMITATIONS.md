@@ -9,9 +9,12 @@
 | Application-owner approvals, provisioning | No real IAM/ITSM integration. Statuses change only through approved evidence claims or the employee's own usability confirmation. | — |
 | Project-role onboarding template | `src/config/templates.ts` proposes "Practical ticket-handling KT" for any case requiring Helix Service Desk. This is demo configuration, not starter-pack data, and creates only PROPOSED items. | Proposed badge and note on the KT activity |
 | What-if results | The simulator works on a copy of the case and never writes. | Persistent "SIMULATION — not actual employee readiness" banner |
+| Historical onboarding data | Ten synthetic past cases (`SIM-011`…`SIM-020`, formerly in `data/cases.json`) with synthetic durations and delay causes. Shown on `/insights` only behind "Include simulated history", in separate charts, never mixed with actual figures. | "SIMULATED DATA" banner on every chart that uses it |
 | Demo users and roles | Cookie-based switcher with role-only labels; not authentication. | Sidebar note |
 
-All employee data is the fictional starter-pack dataset. The former extra cases ONB-011…020 were removed from the actual dataset because they are not in the starter pack.
+All employee data is the fictional starter-pack dataset. The former extra cases ONB-011…020 are not in the starter pack. They were removed from the actual dataset and survive only as the labelled simulated history above.
+
+Historical metrics on actual data show "Insufficient data (n = 0–1)". The starter pack has no completed onboardings with start and end timestamps, and no trend is implied from ten cases.
 
 ## Not built (cut to keep depth), hidden from navigation
 
@@ -19,10 +22,9 @@ The brief listed ten advanced features. The following were **not** built. They a
 
 - **P1-4 Adaptive onboarding roadmap** (Roadmap Agent, timeline, roadmap approvals).
 - **P1-5 KT assessments** (training materials, Assessment Agent, grading, progress chart). The gate engine already guarantees that assessment results can never satisfy execution or validation (`stageBasis = ASSESSMENT` is ignored; tested).
-- **P2-9 Organizational bottleneck insights** (`/insights`). Historical metrics would also need start/end timestamps the starter pack does not contain. With 10 cases, any trend would be misleading.
 - **P2-10 "full twin" map mode** (people and evidence nodes) and "view state as of date". The case hub's Overview + History + embedded map / simulator / reliability already form the integrated view, and the evidence pipeline's 9 steps are shown live after each claim approval.
 
-Reason: three P0 features plus reliability, follow-ups and the briefing were completed end to end, connected through the case hub and covered by the e2e journey. That was preferred over shallow versions of every feature.
+Reason: three P0 features plus reliability, follow-ups, the briefing and bottleneck insights were completed end to end, connected through the case hub and covered by the e2e journey. That was preferred over shallow versions of every feature.
 
 ## Model and data limits
 
@@ -41,6 +43,6 @@ Reason: three P0 features plus reliability, follow-ups and the briefing were com
 ## Next improvements
 
 1. Roadmap and KT assessments on top of the existing gate and permission model.
-2. Bottleneck insights once enough historical cases with timestamps exist (minimum sample size gate already configured).
+2. Historical bottleneck metrics on real data once enough completed cases with timestamps exist (the minimum-sample gate is already in place).
 3. Real integrations: ITSM for access status, Teams/Outlook for sending, with the same approval gate.
 4. Per-project template management by PMO and Technical Leads (replacing the simulated template).

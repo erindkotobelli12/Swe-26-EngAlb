@@ -72,6 +72,7 @@ Enforced server-side in every action (`src/modules/permissions.ts`). "own" means
 | Run AI agents (investigate, suggest, extract, draft) | ✓ | ✓ | | | |
 | Run what-if simulations | ✓ | ✓ | ✓ | ✓ | own |
 | Generate a briefing | ✓ | ✓ | ✓ | ✓ | |
+| View organisational insights | ✓ | ✓ | | ✓ | |
 | View case history | ✓ | ✓ | | ✓ | own |
 
 ## Decision support delivered (per case)
