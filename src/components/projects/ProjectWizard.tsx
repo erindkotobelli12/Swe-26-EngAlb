@@ -105,7 +105,7 @@ export default function ProjectWizard({ mode, projectId, initial, options }: {
             {picks.length > 0 && (
               <ul className="mt-4 divide-y divide-line rounded-lg border border-line" data-testid="picked-employees">
                 {picks.map((p) => (
-                  <li key={p.key} className="grid items-center gap-3 px-3 py-3 sm:grid-cols-[1fr_200px_170px_auto]">
+                  <li key={p.key} className="grid items-center gap-3 px-3 py-3 sm:grid-cols-[minmax(0,1fr)_200px_170px_auto]">
                     <span className="flex items-center gap-2"><Avatar name={p.name} size={26} /><span className="text-sm font-medium text-ink">{p.name}</span>{p.isSample && <SampleTag />}{p.newName && <span className="text-xs text-subtle">new person</span>}</span>
                     <label className="text-xs text-subtle">Reports to
                       <select className="field mt-1" value={p.lineManagerId} onChange={(e) => setPicks((xs) => xs.map((x) => (x.key === p.key ? { ...x, lineManagerId: e.target.value } : x)))}>

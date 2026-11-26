@@ -73,7 +73,7 @@ export function ProjectCard({ p }: { p: ProjectSummary }) {
 export function TeamTree({ p, actions }: { p: ProjectSummary; actions?: (assignmentId: string, name: string) => React.ReactNode }) {
   const unassigned = p.employees.filter((e) => !p.lineManagers.some((lm) => lm.id === e.lineManagerId));
   return (
-    <div className="grid gap-6 lg:grid-cols-[1fr_280px]">
+    <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_280px]">
       <div className="rounded-card border border-line bg-surface p-5 shadow-soft" data-testid="team-tree">
         <TreeRow person={p.additionalManager} role="Additional Manager" />
         <ul className="ml-3 mt-2 space-y-3 border-l border-line pl-5">

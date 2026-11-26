@@ -22,6 +22,7 @@ export type ProjectEmployee = {
   assessed: string | null;
   topFinding: FindingItem | null;
   blocked: boolean;
+  overdue: number;
 };
 export type ProjectSummary = {
   id: string; name: string; code: string | null; description: string | null; startDate: string | null; status: string; isSimulated: boolean;
@@ -62,7 +63,7 @@ export async function loadProjectSummaries(scope: Scope, db: PrismaClient = pris
       return {
         personId: a.personId, employeeId: e?.id ?? null, name: a.person.name ?? e?.name ?? "Name not recorded", isSample: a.person.isSimulated, phase,
         movement: a.movement ?? e?.movement ?? null, startDate: a.startDate ?? e?.startDate ?? null, lineManagerId: a.reportsToPersonId, assignmentId: a.id,
-        assessed: c?.readiness.assessed ?? null, topFinding: c?.open[0] ?? null, blocked: Boolean(c && (c.readiness.assessed === "BLOCKED" || c.open.some((f) => f.severity === "CRITICAL"))),
+        assessed: c?.readiness.assessed ?? null, topFinding: c?.open[0] ?? null, overdue: e ? overdueByEmployee.get(e.id) ?? 0 : 0, blocked: Boolean(c && (c.readiness.assessed === "BLOCKED" || c.open.some((f) => f.severity === "CRITICAL"))),
       };
     });
     const cases = employees.map((e) => (e.employeeId ? byEmployee.get(e.employeeId) : undefined)).filter((c): c is PortfolioCase => Boolean(c));

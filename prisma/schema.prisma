@@ -577,3 +577,24 @@ model AuditLog {
   details    String
   timestamp  String
 }
+
+// An improvement the PMO drives from insights or briefings. Only humans create or approve improvements; AI suggestions
+// can only pre-fill the form. projectId null = organisation-wide. refs: JSON list of "case:<id>", "finding:<id>", "figure:<key>".
+// source: INSIGHT | BRIEFING | MANUAL; status: PROPOSED | APPROVED | IN_PROGRESS | DONE | DROPPED
+model Improvement {
+  id            String  @id @default(cuid())
+  projectId     String?
+  title         String
+  description   String
+  source        String
+  refs          String  @default("[]")
+  ownerPersonId String?
+  status        String  @default("PROPOSED")
+  createdById   String
+  createdAt     String
+  approvedById  String?
+  approvedAt    String?
+  dueDate       String?
+  outcomeNote   String?
+  updatedAt     String?
+}

@@ -47,7 +47,7 @@ export default async function ProjectPage({ params, searchParams }: { params: Pr
       <div className="mb-6"><LinkTabs current={tab} tabs={tabs.map((t) => ({ ...t, href: `/projects/${id}?tab=${t.id}` }))} label="Project sections" /></div>
 
       {tab === "overview" && (
-        <div className="grid gap-6 xl:grid-cols-[1fr_340px]">
+        <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_340px]">
           <div className="space-y-6">
             <Card title="Health" subtitle="Worked out from counts, with every reason shown.">
               <ul className="space-y-2" data-testid="health-reasons">

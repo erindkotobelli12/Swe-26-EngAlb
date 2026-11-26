@@ -59,6 +59,7 @@ export async function BriefingView({ briefing, title }: { briefing: BriefingRow;
                           const f = findingOf.get(id);
                           return f ? <Link key={r} href={`/employees/${f.case.employeeId}?tab=investigation`} className="mx-0.5 inline-flex items-center rounded-md border border-line px-1.5 py-px align-middle text-[11px] font-medium text-muted hover:border-brand-200 hover:text-brand-700">{f.case.employee.name}</Link> : null;
                         }
+                        if (type === "case") return <Link key={r} href={`/employees/${id}?tab=preboarding`} className="mx-0.5 inline-flex items-center rounded-md border border-line px-1.5 py-px align-middle text-[11px] font-medium text-muted hover:text-brand-700">Open case</Link>;
                         if (type === "action") return <Link key={r} href="/follow-ups" className="mx-0.5 inline-flex items-center rounded-md border border-line px-1.5 py-px align-middle text-[11px] font-medium text-muted hover:text-brand-700">Follow-up</Link>;
                         return null;
                       })}

@@ -9,6 +9,8 @@ import { loadPortfolio } from "@/modules/case/portfolio";
 import { loadFollowUpQueue } from "@/modules/followups/service";
 import { assertAllowed, heldRoles, type Principal, type Scope } from "@/modules/permissions";
 import { DecisionError } from "@/modules/detective/decisions";
+import { loadPreboarding } from "@/modules/preboarding/queries";
+import { thresholds } from "@/config/thresholds";
 import { selectBriefing, snapshotOf, type BriefingRole, type Section, type Snapshot, type Statement } from "./select";
 
 export const BRIEFING_ROLES: BriefingRole[] = ["PMO", "ADDITIONAL_MANAGER", "LINE_MANAGER", "TECH_LEAD", "HR"];
@@ -59,7 +61,15 @@ export async function generateBriefing(role: BriefingRole, principal: Principal,
   const groups = queue.groups.map((g) => ({ ...g, items: g.items.filter((i) => ids.has(i.employeeId)) })).filter((g) => g.items.length);
   const evaluationDate = getEvaluationDate();
   const previous = previousRow ? { snapshot: parseJson<Snapshot>(previousRow.snapshotJson, { levels: {}, openFindings: {}, resolved: [] }), generatedAt: previousRow.generatedAt } : null;
-  const deterministic = selectBriefing(role, portfolio, groups, actions.filter((a) => a.employeeId && ids.has(a.employeeId)).map((a) => ({ id: a.id, employeeName: a.employee?.name ?? "Unknown", title: a.title, dueDate: a.dueDate, ownerRole: a.ownerRole })), previous, evaluationDate);
+  const extra: Record<string, Statement[]> = {};
+  if (role === "HR") {
+    // HR variant: the pre-boarding pipeline and start dates at risk (refs point at the case).
+    const rows = (await loadPreboarding(scope, db)).filter((r) => !opts.projectId || r.projectId === opts.projectId);
+    extra.pipeline = rows.map((r) => ({ text: `${r.name}${r.projectName ? ` (${r.projectName})` : ""}: ${r.done} of ${r.total} pre-boarding items done; ${r.hrOpen} HR item(s) open${r.blocked.length ? `; ${r.blocked.length} blocked` : ""}.`, refs: [`case:${r.employeeId}`] }));
+    extra.startDates = rows.filter((r) => r.daysToStart <= thresholds.UPCOMING_START_DAYS && (r.hrOpen > 0 || r.blocked.length > 0 || r.missingContacts.length > 0))
+      .map((r) => ({ text: `${r.name} ${r.daysToStart >= 0 ? `starts in ${r.daysToStart} day(s)` : `started ${-r.daysToStart} day(s) ago`} with ${r.total - r.done} open item(s)${r.missingContacts.length ? `; no ${r.missingContacts.join(" or ")}` : ""}.`, refs: [`case:${r.employeeId}`] }));
+  }
+  const deterministic = selectBriefing(role, portfolio, groups, actions.filter((a) => a.employeeId && ids.has(a.employeeId)).map((a) => ({ id: a.id, employeeName: a.employee?.name ?? "Unknown", title: a.title, dueDate: a.dueDate, ownerRole: a.ownerRole })), previous, evaluationDate, extra);
 
   const outcome = await runAgent({
     agent: "briefing", promptVersion: prompt.PROMPT_VERSION, input: { role, deterministic }, inputRefs: [...new Set(deterministic.flatMap((s) => s.statements.flatMap((x) => x.refs)))].slice(0, 200),

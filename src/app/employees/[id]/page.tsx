@@ -88,7 +88,7 @@ export default async function EmployeeCase({ params, searchParams }: { params: P
         {tab === "overview" && (
           <div className="space-y-5">
             <ReadinessTriple readiness={readiness} reliability={<ReliabilityBadge r={classifyCaseStatus(state)} />} />
-            <div className="grid gap-5 xl:grid-cols-[1fr_380px]">
+            <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_380px]">
               <div className="space-y-5">
                 <Card title="Readiness gates"><GateList gates={readiness.gates} /></Card>
                 <Card title="Access"><AccessTable state={state} /></Card>

@@ -6,8 +6,9 @@ import { loadPortfolio } from "@/modules/case/portfolio";
 import { assertAllowed, type Principal } from "@/modules/permissions";
 import { aggregate, type Bar, type Insights } from "./aggregate";
 
-export async function loadInsights(db: PrismaClient = prisma): Promise<Insights> {
-  const [portfolio, resources, projects] = await Promise.all([loadPortfolio(db), db.knowledgeResource.findMany({ include: { project: true } }), db.project.findMany()]);
+/** Aggregations over all official cases, or only `onlyIds` (a user's scope). */
+export async function loadInsights(db: PrismaClient = prisma, onlyIds?: string[]): Promise<Insights> {
+  const [portfolio, resources, projects] = await Promise.all([loadPortfolio(db, onlyIds),db.knowledgeResource.findMany({ include: { project: true } }), db.project.findMany()]);
   return aggregate(portfolio, resources.map((r) => ({ id: r.id, title: r.title, projectId: r.projectId, projectName: r.project?.name ?? null, location: r.location, copyAllowed: r.copyAllowed })), projects.map((p) => p.name));
 }
 
