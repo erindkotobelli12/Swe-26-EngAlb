@@ -1,0 +1,12 @@
+[
+ {"id":"ONB-001","employee":"Mila Rowan","start":"2026-10-05","movement":"New Hire","project":"Aurora","manager":"Jon Vale","status":"Shadowing","last_update":"2026-10-13"},
+ {"id":"ONB-002","employee":"Leo Marin","start":"2026-10-07","movement":"Reallocation","project":"Nimbus","manager":"Sara Neri","status":"Access Pending","last_update":"2026-10-14"},
+ {"id":"ONB-003","employee":"Nora Venn","start":"2026-09-28","movement":"New Hire","project":null,"manager":"Tomas Reed","status":"On Track","last_update":"2026-09-30"},
+ {"id":"ONB-004","employee":"Aron Bell","start":"2026-10-01","movement":"Reallocation","project":"Helios","manager":null,"status":"KT Started","last_update":"2026-10-11"},
+ {"id":"ONB-005","employee":"Eva Stone","start":"2026-09-21","movement":"New Hire","project":"Orion","manager":"Luca Gray","status":"Ready with Support","last_update":"2026-10-13"},
+ {"id":"ONB-006","employee":"Noah Lane","start":"2026-10-12","movement":"New Hire","project":"Atlas","manager":"Maya Ford","status":"PreOnboarding","last_update":"2026-10-12"},
+ {"id":"ONB-007","employee":"Iris Moon","start":"2026-09-15","movement":"Reallocation","project":"Nova","manager":"Rita Cole","status":"On Track","last_update":"2026-09-20"},
+ {"id":"ONB-008","employee":"Theo Park","start":"2026-10-03","movement":"New Hire","project":"Pulse","manager":"Mark Hale","status":"Blocked","last_update":"2026-10-14"},
+ {"id":"ONB-009","employee":"Lina West","start":"2026-10-06","movement":"Reallocation","project":null,"manager":"Nina Cross","status":"KT Started","last_update":"2026-10-09"},
+ {"id":"ONB-010","employee":"Owen Hart","start":"2026-09-29","movement":"New Hire","project":"Vega","manager":"Alex North","status":"Partially Ready","last_update":"2026-10-14"}
+]
