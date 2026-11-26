@@ -11,14 +11,17 @@ import { loadPortfolio } from "@/modules/case/portfolio";
 import { recomputeCase } from "@/modules/case/recompute";
 import { DecisionError } from "@/modules/detective/decisions";
 import { ingestEvidence } from "@/modules/evidence/pipeline";
-import { assertCan, type Principal } from "@/modules/permissions";
+import { assertAllowed, can, resolveScope, type Principal, type Scope } from "@/modules/permissions";
 import { buildFollowUps, templateDraft, type FollowUpGroup, type FollowUpItem } from "./candidates";
 
 const actorOf = (p: Principal): Actor => ({ userId: p.userId, label: p.name, role: p.role });
 const ACTIVE = ["DRAFT", "APPROVED", "SENT_SIMULATED"];
 
-/** Read-only queue: deterministic groups plus the persisted communications. */
-export async function loadFollowUpQueue(db: PrismaClient = prisma) {
+/**
+ * Read-only queue: deterministic groups plus the persisted communications. With a scope, only items and
+ * communications about employees the user can see are returned.
+ */
+export async function loadFollowUpQueue(db: PrismaClient = prisma, scope?: Scope) {
   const [portfolio, people, actions, communications] = await Promise.all([
     loadPortfolio(db),
     db.person.findMany(),
@@ -32,20 +35,33 @@ export async function loadFollowUpQueue(db: PrismaClient = prisma) {
     actions.map((a) => ({ id: a.id, employeeId: a.employeeId!, findingId: a.findingId, title: a.title, description: a.description, ownerRole: a.ownerRole, dueDate: a.dueDate, priority: a.priority, evidenceIds: parseJson(a.evidenceIds, []) })),
     covered,
   );
-  return { groups, communications, employees: new Map(portfolio.map((c) => [c.state.employee.id, c.state.employee.name])) };
+  if (!scope) return { groups, communications, employees: new Map(portfolio.map((c) => [c.state.employee.id, c.state.employee.name])) };
+  const visible = (id: string) => Boolean(scope.cases[id]);
+  return {
+    groups: groups.map((g) => ({ ...g, items: g.items.filter((i) => visible(i.employeeId)) })).filter((g) => g.items.length),
+    communications: communications.filter((c) => parseJson<string[]>(c.employeeIds, []).some(visible)),
+    employees: new Map(portfolio.filter((c) => visible(c.state.employee.id)).map((c) => [c.state.employee.id, c.state.employee.name])),
+  };
 }
 
-/** Persists one consolidated DRAFT per stakeholder group (deterministic template). Idempotent per item. */
+/**
+ * Persists one consolidated DRAFT per stakeholder group (deterministic template). Idempotent per item.
+ * A draft only includes employees the author may follow up on (phase owner or Line Manager).
+ */
 export async function createDrafts(stakeholderKeys: string[] | "ALL", principal: Principal, db: PrismaClient = prisma): Promise<number> {
-  assertCan(principal, "communication.approve");
-  const { groups } = await loadFollowUpQueue(db);
-  const chosen = stakeholderKeys === "ALL" ? groups : groups.filter((g) => stakeholderKeys.includes(g.stakeholder.key));
+  const scope = await resolveScope(principal, db);
+  const { groups } = await loadFollowUpQueue(db, scope);
+  const mine = groups
+    .map((g) => ({ ...g, items: g.items.filter((i) => can(scope, "communication.approve", { employeeId: i.employeeId })) }))
+    .filter((g) => g.items.length);
+  const chosen = stakeholderKeys === "ALL" ? mine : mine.filter((g) => stakeholderKeys.includes(g.stakeholder.key));
+  if (!chosen.length) await assertAllowed(principal, "communication.approve", { employeeIds: [] }, db);
   for (const g of chosen) await createDraftForGroup(g, principal, db);
   return chosen.length;
 }
 
 async function createDraftForGroup(g: FollowUpGroup, principal: Principal, db: PrismaClient) {
-  const draft = templateDraft(g);
+  const draft = templateDraft(g, principal.name);
   const c = await db.communication.create({
     data: {
       stakeholderKey: g.stakeholder.key, stakeholderRole: g.stakeholder.role, stakeholderPersonId: g.stakeholder.personId, stakeholderLabel: g.stakeholder.label,
@@ -57,9 +73,11 @@ async function createDraftForGroup(g: FollowUpGroup, principal: Principal, db: P
   await audit({ actor: actorOf(principal), action: "FOLLOW_UP_DRAFTED", entityType: "Communication", entityId: c.id, after: { stakeholder: g.stakeholder.label, items: g.items.length, origin: "TEMPLATE" }, evidenceIds: g.items.flatMap((i) => i.facts.map((f) => f.evidenceId)), details: `Template draft for ${g.stakeholder.label} covering ${g.items.length} item(s).` }, db);
 }
 
-async function loadComm(db: PrismaClient, id: string) {
+/** Loads a follow-up and checks the principal may act on every employee it covers. */
+async function loadComm(db: PrismaClient, id: string, principal: Principal, permission: "communication.approve" | "communication.recordResponse" = "communication.approve") {
   const c = await db.communication.findUnique({ where: { id } });
   if (!c) throw new DecisionError("Unknown follow-up.");
+  await assertAllowed(principal, permission, { employeeIds: parseJson<string[]>(c.employeeIds, []) }, db);
   return c;
 }
 
@@ -67,9 +85,8 @@ export type PersonaliseResult = { ok: true; run: AIRunInfo; warnings: string[] }
 
 /** AI rewrites the draft from the grouped facts. Guards: only allowed names, every employee covered. The human still approves. */
 export async function personaliseDraft(id: string, principal: Principal, db: PrismaClient = prisma): Promise<PersonaliseResult> {
-  assertCan(principal, "communication.approve");
-  assertCan(principal, "ai.run");
-  const c = await loadComm(db, id);
+  await assertAllowed(principal, "ai.run", {}, db);
+  const c = await loadComm(db, id, principal);
   if (c.status !== "DRAFT") throw new DecisionError("Only drafts can be rewritten.");
   const items = parseJson<FollowUpItem[]>(c.itemsJson, []);
   const people = await db.person.findMany({ where: { name: { not: null } } });
@@ -78,7 +95,7 @@ export async function personaliseDraft(id: string, principal: Principal, db: Pri
   const allowedNames = [...employeeNames, ...(recipientName ? [recipientName] : [])];
   const input: prompt.DraftInput = {
     channel: c.channel === "TEAMS" ? "TEAMS" : "EMAIL", recipient: c.stakeholderLabel, greeting: recipientName ? recipientName.split(" ")[0] : `${c.stakeholderLabel.split(" (")[0]} team`,
-    sender: "PMO Coordinator", allowedNames,
+    sender: principal.name, allowedNames,
     items: items.map((i) => ({ employee: i.employeeName, title: i.title, ask: i.ask, daysOpen: i.daysOpen, quotes: i.facts.slice(0, 2) })),
   };
   const outcome = await runAgent({ agent: "followup_drafting", promptVersion: prompt.PROMPT_VERSION, input, inputRefs: [c.id, ...items.flatMap((i) => i.facts.map((f) => f.evidenceId))], system: prompt.SYSTEM, user: prompt.buildUser(input), schema: prompt.DraftSchema, db });
@@ -98,17 +115,15 @@ export async function personaliseDraft(id: string, principal: Principal, db: Pri
 export const EditSchema = z.object({ id: z.string().min(1), subject: z.string().trim().min(3).max(200), body: z.string().trim().min(20).max(5000) });
 
 export async function saveEdit(input: z.infer<typeof EditSchema>, principal: Principal, db: PrismaClient = prisma): Promise<void> {
-  assertCan(principal, "communication.approve");
   const data = EditSchema.parse(input);
-  const c = await loadComm(db, data.id);
+  const c = await loadComm(db, data.id, principal);
   if (!["DRAFT", "APPROVED"].includes(c.status)) throw new DecisionError("Sent follow-ups cannot be edited.");
   await db.communication.update({ where: { id: c.id }, data: { subject: data.subject, body: data.body, draftOrigin: "HUMAN_EDITED", status: "DRAFT", approvedBy: null, approvedAt: null } });
   await audit({ actor: actorOf(principal), action: "FOLLOW_UP_EDITED", entityType: "Communication", entityId: c.id, before: { subject: c.subject, status: c.status }, after: { subject: data.subject, status: "DRAFT" }, details: "Draft edited by a human (approval reset)." }, db);
 }
 
 export async function approve(id: string, principal: Principal, db: PrismaClient = prisma): Promise<void> {
-  assertCan(principal, "communication.approve");
-  const c = await loadComm(db, id);
+  const c = await loadComm(db, id, principal);
   if (c.status !== "DRAFT") throw new DecisionError("Only drafts can be approved.");
   await db.communication.update({ where: { id }, data: { status: "APPROVED", approvedBy: principal.name, approvedAt: auditTimestamp() } });
   await audit({ actor: actorOf(principal), action: "FOLLOW_UP_APPROVED", entityType: "Communication", entityId: id, before: { status: "DRAFT" }, after: { status: "APPROVED" }, details: `Approved follow-up to ${c.stakeholderLabel}.` }, db);
@@ -119,8 +134,7 @@ export async function approve(id: string, principal: Principal, db: PrismaClient
  * simulated request evidence on each case, so replies can be linked and unanswered follow-ups detected.
  */
 export async function sendSimulated(id: string, principal: Principal, db: PrismaClient = prisma): Promise<void> {
-  assertCan(principal, "communication.approve");
-  const c = await loadComm(db, id);
+  const c = await loadComm(db, id, principal);
   if (c.status !== "APPROVED") throw new DecisionError("A follow-up must be approved before it is sent.");
   const now = auditTimestamp();
   const outbox: string[] = [];
@@ -130,7 +144,7 @@ export async function sendSimulated(id: string, principal: Principal, db: Prisma
     const evId = `OUT-${c.id.slice(-6).toUpperCase()}-${employeeId}`;
     await db.evidence.create({
       data: {
-        id: evId, title: `Follow-up sent (simulated): ${c.subject}`, sourceType: c.channel === "TEAMS" ? "TEAMS_MESSAGE" : "EMAIL", author: principal.name, senderRole: "PMO",
+        id: evId, title: `Follow-up sent (simulated): ${c.subject}`, sourceType: c.channel === "TEAMS" ? "TEAMS_MESSAGE" : "EMAIL", author: principal.name, senderRole: principal.role,
         recipients: toJson([{ name: null, role: c.stakeholderRole }]), authorityLevel: "SECONDARY", timestamp: getEvaluationDate(), content: c.body, employeeId,
         projectId: employee.projectId, caseId: employee.case.id, reviewStatus: "APPROVED", isRequest: true, isSimulated: true, ingestedAt: now, ingestedBy: principal.userId,
         sourceRef: `Simulated outbox — communication ${c.id}`,
@@ -151,15 +165,14 @@ export const ResponseSchema = z.object({
 
 /** Records the stakeholder's reply as new (simulated) evidence through the evidence pipeline. */
 export async function recordResponse(input: z.infer<typeof ResponseSchema>, principal: Principal, db: PrismaClient = prisma): Promise<string> {
-  assertCan(principal, "communication.recordResponse");
   const data = ResponseSchema.parse(input);
-  const c = await loadComm(db, data.id);
+  const c = await loadComm(db, data.id, principal, "communication.recordResponse");
   if (c.status !== "SENT_SIMULATED" && c.status !== "RESPONDED") throw new DecisionError("Record a response only for a sent follow-up.");
   const outbox = parseJson<string[]>(c.outboxEvidenceIds, []).find((x) => x.endsWith(data.employeeId));
   if (!outbox) throw new DecisionError("This follow-up did not include that employee.");
   const evidenceId = await ingestEvidence({
     title: `Response from ${c.stakeholderLabel}`, sourceType: c.channel === "TEAMS" ? "TEAMS_MESSAGE" : "EMAIL", senderName: data.senderName || undefined,
-    senderRole: (PERSON_ROLES as readonly string[]).includes(c.stakeholderRole) ? (c.stakeholderRole as PersonRole) : "PMO", recipientRole: "PMO", content: data.content, employeeId: data.employeeId, inReplyToId: outbox, isRequest: false, isSimulated: true,
+    senderRole: (PERSON_ROLES as readonly string[]).includes(c.stakeholderRole) ? (c.stakeholderRole as PersonRole) : "PMO", recipientRole: (PERSON_ROLES as readonly string[]).includes(principal.role) ? (principal.role as PersonRole) : undefined, content: data.content, employeeId: data.employeeId, inReplyToId: outbox, isRequest: false, isSimulated: true,
   }, principal, db);
   await db.communication.update({ where: { id: c.id }, data: { status: "RESPONDED", respondedAt: auditTimestamp(), responseEvidenceId: evidenceId } });
   await audit({ actor: actorOf(principal), action: "FOLLOW_UP_RESPONDED", entityType: "Communication", entityId: c.id, employeeId: data.employeeId, before: { status: c.status }, after: { status: "RESPONDED", responseEvidenceId: evidenceId }, evidenceIds: [evidenceId], details: `Response recorded from ${c.stakeholderLabel}; pending review in the evidence pipeline.` }, db);
@@ -168,8 +181,7 @@ export async function recordResponse(input: z.infer<typeof ResponseSchema>, prin
 }
 
 export async function closeCommunication(id: string, principal: Principal, db: PrismaClient = prisma): Promise<void> {
-  assertCan(principal, "communication.approve");
-  const c = await loadComm(db, id);
+  const c = await loadComm(db, id, principal);
   if (c.status === "CLOSED") return;
   await db.communication.update({ where: { id }, data: { status: "CLOSED", closedAt: auditTimestamp() } });
   await audit({ actor: actorOf(principal), action: "FOLLOW_UP_CLOSED", entityType: "Communication", entityId: id, before: { status: c.status }, after: { status: "CLOSED" }, details: `Follow-up to ${c.stakeholderLabel} closed.` }, db);

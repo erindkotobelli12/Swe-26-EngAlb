@@ -6,11 +6,13 @@ import { SYSTEM_ACTOR } from "../../src/modules/audit";
 import type { Principal } from "../../src/modules/permissions";
 
 const db = new PrismaClient();
-const pmo: Principal = { userId: "demo-pmo", role: "PMO", employeeId: null, name: "PMO" };
+// The case's phase owner (its project's Technical Lead) reviews evidence; the PMO no longer does.
+const tl: Principal = { userId: "demo-tl", role: "TECH_LEAD", employeeId: null, name: "Ben Okafor" };
+const pmo: Principal = { userId: "demo-pmo", role: "PMO", employeeId: null, name: "Petra Lind" };
 const EMP = "SIM-PIPE-1";
 
 beforeAll(async () => {
-  await db.employee.create({ data: { id: EMP, name: "Pipeline Test (simulated)", startDate: "2026-10-01", movement: "New Hire", trackerStatus: "Access Pending", lastUpdate: "2026-10-14", isSimulated: true } });
+  await db.employee.create({ data: { id: EMP, name: "Pipeline Test (simulated)", projectId: "NIMBUS", startDate: "2026-10-01", movement: "New Hire", trackerStatus: "Access Pending", lastUpdate: "2026-10-14", isSimulated: true } });
   await db.onboardingCase.create({ data: { id: `CASE-${EMP}`, employeeId: EMP } });
   await db.accessRequest.create({ data: { id: "ACC-SIM-PIPE", employeeId: EMP, application: "Helix Service Desk", requiredScope: "x", status: "REQUESTED", requestDate: "2026-10-07", handlerRole: "ACCESS_SUPPORT" } });
   await recomputeCase(EMP, "test setup", SYSTEM_ACTOR, db);
@@ -22,15 +24,16 @@ describe("evidence pipeline", () => {
     const before = await db.finding.findMany({ where: { caseId: `CASE-${EMP}`, status: "OPEN", type: "ACCESS_NOT_USABLE" } });
     expect(before).toHaveLength(1);
     const content = "Helix has been provisioned and Leo logged in successfully this morning.";
-    const id = await ingestEvidence({ title: "Helix confirmed", sourceType: "EMAIL", senderRole: "ACCESS_SUPPORT", content, employeeId: EMP, isRequest: false, isSimulated: true }, pmo, db);
+    const id = await ingestEvidence({ title: "Helix confirmed", sourceType: "EMAIL", senderRole: "ACCESS_SUPPORT", content, employeeId: EMP, isRequest: false, isSimulated: true }, tl, db);
     const stored = await db.evidence.findUniqueOrThrow({ where: { id } });
     expect(stored.content).toBe(content);
     expect(stored.reviewStatus).toBe("PENDING_REVIEW");
 
-    await expect(addManualClaim({ evidenceId: id, field: "access.Helix Service Desk.status", value: "USABLE", excerpt: "Leo can now use Helix" }, pmo, db)).rejects.toBeInstanceOf(PipelineError);
-    await addManualClaim({ evidenceId: id, field: "access.Helix Service Desk.status", value: "USABLE", excerpt: "logged in successfully" }, pmo, db);
+    await expect(addManualClaim({ evidenceId: id, field: "access.Helix Service Desk.status", value: "USABLE", excerpt: "Leo can now use Helix" }, tl, db)).rejects.toBeInstanceOf(PipelineError);
+    await addManualClaim({ evidenceId: id, field: "access.Helix Service Desk.status", value: "USABLE", excerpt: "logged in successfully" }, tl, db);
     const claim = await db.evidenceClaim.findFirstOrThrow({ where: { evidenceId: id } });
-    const result = await reviewClaim({ claimId: claim.id, decision: "APPROVE" }, pmo, db);
+    await expect(reviewClaim({ claimId: claim.id, decision: "APPROVE" }, pmo, db)).rejects.toThrow(/permission/);
+    const result = await reviewClaim({ claimId: claim.id, decision: "APPROVE" }, tl, db);
 
     expect(result.steps).toHaveLength(9);
     expect((await db.accessRequest.findUniqueOrThrow({ where: { id: "ACC-SIM-PIPE" } })).status).toBe("USABLE");
@@ -42,10 +45,10 @@ describe("evidence pipeline", () => {
   });
 
   it("an approved claim can never write readiness validation", async () => {
-    const id = await ingestEvidence({ title: "LM says validated", sourceType: "EMAIL", senderRole: "LINE_MANAGER", content: "I hereby validate the employee as independently ready.", employeeId: EMP, isRequest: false, isSimulated: true }, pmo, db);
-    await addManualClaim({ evidenceId: id, field: "case.validatedStatus", value: "INDEPENDENTLY_READY", excerpt: "validate the employee as independently ready" }, pmo, db);
+    const id = await ingestEvidence({ title: "LM says validated", sourceType: "EMAIL", senderRole: "LINE_MANAGER", content: "I hereby validate the employee as independently ready.", employeeId: EMP, isRequest: false, isSimulated: true }, tl, db);
+    await addManualClaim({ evidenceId: id, field: "case.validatedStatus", value: "INDEPENDENTLY_READY", excerpt: "validate the employee as independently ready" }, tl, db);
     const claim = await db.evidenceClaim.findFirstOrThrow({ where: { evidenceId: id } });
-    await reviewClaim({ claimId: claim.id, decision: "APPROVE" }, pmo, db);
+    await reviewClaim({ claimId: claim.id, decision: "APPROVE" }, tl, db);
     expect(await db.readinessValidation.count({ where: { caseId: `CASE-${EMP}` } })).toBe(0);
     expect((await db.onboardingCase.findUniqueOrThrow({ where: { id: `CASE-${EMP}` } })).validatedStatus).not.toBe("INDEPENDENTLY_READY");
   });

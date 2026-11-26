@@ -4,6 +4,7 @@ import { Lock } from "lucide-react";
 import { thresholds } from "@/config/thresholds";
 import { getSession } from "@/lib/auth";
 import { can } from "@/modules/permissions";
+import { getScope } from "@/server/principal";
 import { loadInsights } from "@/modules/insights/service";
 import { simulatedMetrics, type Metric } from "@/modules/insights/aggregate";
 import { BarPanel, HypothesesPanel } from "@/components/insights/InsightCharts";
@@ -21,8 +22,8 @@ function MetricTile({ m, simulated = false }: { m: Metric; simulated?: boolean }
 }
 
 export default async function InsightsPage({ searchParams }: { searchParams: Promise<{ sim?: string }> }) {
-  const session = await getSession();
-  if (!can(session, "insights.view")) redirect("/dashboard");
+  await getSession();
+  if (!can(await getScope(), "insights.view")) redirect("/");
   const { sim } = await searchParams;
   const includeSim = sim === "1";
   const i = await loadInsights();

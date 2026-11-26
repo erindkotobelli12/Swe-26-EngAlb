@@ -1,14 +1,14 @@
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/db";
-import { getSession } from "@/lib/auth";
+import { can } from "@/modules/permissions";
+import { getScope } from "@/server/principal";
 import { parseJson } from "@/lib/json";
 import { getLLMStatus } from "@/ai/providers";
 import { Card, EmptyState } from "@/components/ui/badges";
 
 /** AI transparency log: every agent call with model, prompt version, input IDs, status and output. */
 export default async function AIActivityPage() {
-  const session = await getSession();
-  if (session.role === "EMPLOYEE" || session.role === "LINE_MANAGER") redirect("/dashboard");
+  if (!can(await getScope(), "audit.view")) redirect("/");
   const [runs, status] = await Promise.all([prisma.aIRun.findMany({ orderBy: { createdAt: "desc" }, take: 100 }), getLLMStatus()]);
   return (
     <div className="px-5 py-6 md:px-8">

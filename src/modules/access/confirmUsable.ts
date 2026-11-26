@@ -5,7 +5,7 @@ import { audit } from "@/modules/audit";
 import { recomputeCase, type RecomputeSummary } from "@/modules/case/recompute";
 import { applyClaim } from "@/modules/evidence/fieldMapper";
 import { PipelineError } from "@/modules/evidence/pipeline";
-import { assertCan, type Principal } from "@/modules/permissions";
+import { assertAllowed, type Principal } from "@/modules/permissions";
 
 /**
  * An employee confirms successful use of their OWN access. The employee is the authoritative source for
@@ -14,7 +14,7 @@ import { assertCan, type Principal } from "@/modules/permissions";
 export async function confirmOwnAccessUsable(accessId: string, principal: Principal, db: PrismaClient = prisma): Promise<RecomputeSummary | null> {
   const access = await db.accessRequest.findUnique({ where: { id: accessId }, include: { employee: { include: { case: true } } } });
   if (!access?.employee.case) throw new PipelineError("Unknown access request.");
-  assertCan(principal, "access.confirmUsable", { employeeId: access.employeeId });
+  await assertAllowed(principal, "access.confirmUsable", { employeeId: access.employeeId }, db);
   if (access.status === "USABLE") throw new PipelineError(`${access.application} is already confirmed usable.`);
 
   const date = getEvaluationDate();

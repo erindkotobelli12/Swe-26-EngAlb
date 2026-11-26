@@ -3,7 +3,7 @@ import { z } from "zod";
 import { runAgent } from "@/ai/runAgent";
 import * as prompt from "@/ai/prompts/simulator";
 import { loadCaseState } from "@/modules/case/loadCaseState";
-import { assertCan } from "@/modules/permissions";
+import { assertAllowed } from "@/modules/permissions";
 import { SimulationOverridesSchema } from "@/modules/simulator/overrides";
 import { simulate, type SimulationResult } from "@/modules/simulator/simulate";
 import { getPrincipal, toResult, type ActionResult } from "@/server/principal";
@@ -13,7 +13,7 @@ export async function runSimulationAction(employeeId: string, overrides: unknown
   return toResult(async () => {
     const principal = await getPrincipal();
     const id = z.string().min(1).parse(employeeId);
-    assertCan(principal, "simulator.run", { employeeId: id });
+    await assertAllowed(principal, "simulator.run", { employeeId: id });
     const state = await loadCaseState(id);
     if (!state) throw new Error("Unknown case");
     return simulate(state, SimulationOverridesSchema.parse(overrides));
@@ -27,7 +27,7 @@ export async function explainSimulationAction(employeeId: string, overrides: unk
   return toResult(async () => {
     const principal = await getPrincipal();
     const id = z.string().min(1).parse(employeeId);
-    assertCan(principal, "simulator.run", { employeeId: id });
+    await assertAllowed(principal, "simulator.run", { employeeId: id });
     const state = await loadCaseState(id);
     if (!state) throw new Error("Unknown case");
     const diff = simulate(state, SimulationOverridesSchema.parse(overrides));

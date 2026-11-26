@@ -7,7 +7,8 @@ import { formatDate, getEvaluationDate } from "@/lib/clock";
 import { parseJson } from "@/lib/json";
 import { loadCaseState } from "@/modules/case/loadCaseState";
 import { bySeverity } from "@/modules/case/portfolio";
-import { can } from "@/modules/permissions";
+import { can, type Scope } from "@/modules/permissions";
+import { getScope } from "@/server/principal";
 import { evaluateReadiness } from "@/modules/readiness/evaluate";
 import { fieldSuggestions, listEvidenceCards, replyTargets } from "@/modules/evidence/queries";
 import { recomputeCaseAction } from "@/server/actions/case";
@@ -40,8 +41,8 @@ import { ClaimReview, EvidenceTools } from "@/components/evidence/ReviewControls
 import { Card, EmptyState, EvidenceChip, ProvenanceBadge, SeverityBadge } from "@/components/ui/badges";
 
 export default async function EmployeeCase({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ tab?: string; preset?: string }> }) {
-  const [{ id }, { tab: rawTab, preset }, session] = await Promise.all([params, searchParams, getSession()]);
-  if (!can(session, "case.view", { employeeId: id })) {
+  const [{ id }, { tab: rawTab, preset }, session, scope] = await Promise.all([params, searchParams, getSession(), getScope()]);
+  if (!scope.cases[id]) {
     return <div className="px-5 py-6 md:px-8"><EmptyState title="You can only view your own onboarding case.">Switch demo user to open this case.</EmptyState></div>;
   }
   const state = await loadCaseState(id);
@@ -63,7 +64,7 @@ export default async function EmployeeCase({ params, searchParams }: { params: P
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <span className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-500">Evaluation date <b className="text-slate-800">{formatDate(getEvaluationDate())}</b></span>
-          {can(session, "case.recompute") && <ActionButton action={rerun} label="Re-run analysis" pendingLabel="Recomputing…" icon={<RefreshCw size={15} />} variant="secondary" />}
+          {can(scope, "case.recompute", { employeeId: id }) && <ActionButton action={rerun} label="Re-run analysis" pendingLabel="Recomputing…" icon={<RefreshCw size={15} />} variant="secondary" />}
         </div>
       </div>
 
@@ -94,7 +95,7 @@ export default async function EmployeeCase({ params, searchParams }: { params: P
                 <Card title="Onboarding checklist (starter pack §6)"><ChecklistPanel state={state} gates={readiness.gates} /></Card>
                 <Card title="Technical validation" id="validation">
                   <ValidationHistory state={state} />
-                  {can(session, "validation.record")
+                  {can(scope, "validation.record", { employeeId: id })
                     ? <div className="mt-4 border-t border-slate-100 pt-4"><p className="mb-2 text-xs text-slate-500">Decide with the gates and evidence on this page in view. Assessment results and AI output never replace observed execution.</p><ValidationForm employeeId={id} evidence={[...state.evidence, ...state.projectEvidence].filter((e) => e.reviewStatus === "APPROVED").map((e) => ({ id: e.id, title: e.title }))} /></div>
                     : <p className="mt-3 text-xs text-slate-500">Only a Technical Lead can record a validation decision.</p>}
                 </Card>
@@ -106,7 +107,7 @@ export default async function EmployeeCase({ params, searchParams }: { params: P
         {tab === "map" && (
           <div className="space-y-4">
             <DependencyMap data={mapData} employeeId={id} />
-            <DependencySuggestions employeeId={id} proposed={mapData.proposed} canDecide={can(session, "dependency.decide")} canRunAI={can(session, "ai.run")} />
+            <DependencySuggestions employeeId={id} proposed={mapData.proposed} canDecide={can(scope, "dependency.decide", { employeeId: id })} canRunAI={can(scope, "ai.run", { employeeId: id })} />
           </div>
         )}
 
@@ -116,7 +117,7 @@ export default async function EmployeeCase({ params, searchParams }: { params: P
           return <Simulator key={preset ?? "none"} employeeId={id} toggles={toggles} initialChoice={initialChoice} initialResult={simulate(state, overridesFrom(toggles, initialChoice, false))} actualLevel={levelLabel(readiness.assessed)} />;
         })()}
 
-        {tab === "investigation" && <InvestigationTab state={state} session={session} />}
+        {tab === "investigation" && <InvestigationTab state={state} scope={scope} />}
         {tab === "evidence" && (
           <div className="space-y-4">
             <Card title="Reliability of this case's statuses">
@@ -127,12 +128,12 @@ export default async function EmployeeCase({ params, searchParams }: { params: P
                 {state.kt.filter((k) => k.stage !== "NOT_STARTED").map((k) => <div key={k.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-100 p-2"><span>{k.title}: {k.stage.replaceAll("_", " ").toLowerCase()}</span><ReliabilityBadge r={classifyKT(state, k)} compact /></div>)}
               </div>
             </Card>
-            <EvidenceTab employeeId={id} session={session} />
+            <EvidenceTab employeeId={id} scope={scope} />
           </div>
         )}
         {tab === "history" && <HistoryTab employeeId={id} />}
         {tab === "followups" && <FollowUpsTab employeeId={id} />}
-        {tab === "roadmap" && <RoadmapTab state={state} readiness={readiness} session={session} />}
+        {tab === "roadmap" && <RoadmapTab state={state} readiness={readiness} scope={scope} />}
       </div>
     </div>
   );
@@ -155,18 +156,18 @@ function ValidationHistory({ state }: { state: CaseState }) {
   );
 }
 
-function InvestigationTab({ state, session }: { state: CaseState; session: Awaited<ReturnType<typeof getSession>> }) {
+function InvestigationTab({ state, scope }: { state: CaseState; scope: Scope }) {
   const open = state.findings.filter((f) => f.status === "OPEN").sort(bySeverity);
   const proposed = state.findings.filter((f) => f.status === "PROPOSED").sort(bySeverity);
   const closed = state.findings.filter((f) => f.status === "RESOLVED" || f.status === "DISMISSED");
-  const decide = can(session, "finding.decide");
+  const decide = (f: CaseState["findings"][number]) => can(scope, "finding.decide", { employeeId: state.employee.id, findingCategory: f.category });
   const caseEvidence = state.evidence.filter((e) => e.sourceType !== "TRACKER").map((e) => ({ id: e.id, title: e.title }));
-  const actions = (f: CaseState["findings"][number]) => decide ? <FindingActions findingId={f.id} status={f.status} evidenceIds={f.evidenceIds} caseEvidence={caseEvidence} /> : undefined;
+  const actions = (f: CaseState["findings"][number]) => decide(f) ? <FindingActions findingId={f.id} status={f.status} evidenceIds={f.evidenceIds} caseEvidence={caseEvidence} /> : undefined;
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <p className="flex flex-wrap items-center gap-2 text-sm text-slate-600"><ProvenanceBadge state="actual" /> Rule findings are deterministic checks over stored records. <ProvenanceBadge state="proposed" /> AI findings and AI reviews await a human decision.</p>
-        {can(session, "ai.run") && <InvestigateButton employeeId={state.employee.id} />}
+        {can(scope, "ai.run", { employeeId: state.employee.id }) && <InvestigateButton employeeId={state.employee.id} />}
       </div>
       {open.length ? open.map((f) => <FindingCard key={f.id} finding={f} state={state} actions={actions(f)} />) : <EmptyState title="No open findings for this case" />}
       {proposed.length > 0 && <><h2 className="pt-2 text-lg font-bold">AI proposals awaiting review</h2>{proposed.map((f) => <FindingCard key={f.id} finding={f} state={state} actions={actions(f)} />)}</>}
@@ -175,7 +176,7 @@ function InvestigationTab({ state, session }: { state: CaseState; session: Await
   );
 }
 
-async function EvidenceTab({ employeeId, session }: { employeeId: string; session: Awaited<ReturnType<typeof getSession>> }) {
+async function EvidenceTab({ employeeId, scope }: { employeeId: string; scope: Scope }) {
   const employee = await prisma.employee.findUniqueOrThrow({ where: { id: employeeId }, select: { projectId: true, name: true } });
   const [cards, project, fields, targets] = await Promise.all([
     listEvidenceCards({ employeeId }),
@@ -183,11 +184,11 @@ async function EvidenceTab({ employeeId, session }: { employeeId: string; sessio
     fieldSuggestions(employeeId),
     replyTargets(),
   ]);
-  const canReview = can(session, "evidence.review");
-  const canRunAI = can(session, "ai.run");
+  const canReview = can(scope, "evidence.review", { employeeId });
+  const canRunAI = can(scope, "ai.run", { employeeId });
   return (
     <div className="space-y-4">
-      {can(session, "evidence.add", { employeeId }) && <AddEvidenceForm employees={[]} fixedEmployeeId={employeeId} replyTargets={targets} defaultDate={getEvaluationDate()} />}
+      {can(scope, "evidence.add", { employeeId }) && <AddEvidenceForm employees={[]} fixedEmployeeId={employeeId} replyTargets={targets} defaultDate={getEvaluationDate()} />}
       {cards.map((e) => (
         <EvidenceCard key={e.id} e={e}
           controls={e.sourceType !== "TRACKER" && (canReview || canRunAI) ? <EvidenceTools evidenceId={e.id} reviewStatus={e.reviewStatus} canRunAI={canRunAI} canReview={canReview} fields={fields} /> : undefined}
@@ -199,7 +200,7 @@ async function EvidenceTab({ employeeId, session }: { employeeId: string; sessio
   );
 }
 
-async function RoadmapTab({ state, readiness, session }: { state: CaseState; readiness: ReadinessResult; session: Awaited<ReturnType<typeof getSession>> }) {
+async function RoadmapTab({ state, readiness, scope }: { state: CaseState; readiness: ReadinessResult; scope: Scope }) {
   const [rows, caseRow] = await Promise.all([
     prisma.roadmapItem.findMany({ where: { employeeId: state.employee.id }, orderBy: { createdAt: "asc" } }),
     prisma.onboardingCase.findUniqueOrThrow({ where: { id: state.caseId }, select: { roadmapBaselineJson: true, roadmapBaselineAt: true, roadmapBaselineBy: true } }),
@@ -207,19 +208,19 @@ async function RoadmapTab({ state, readiness, session }: { state: CaseState; rea
   const backbone = buildBackbone(state, readiness);
   const baseline = parseJson<BaselineEntry[] | null>(caseRow.roadmapBaselineJson, null);
   const diff = baseline ? diffBackbone(baseline, backbone) : [];
-  const canPlan = session.role === "PMO" || session.role === "TECH_LEAD";
+  const canPlan = can(scope, "roadmap.baseline", { employeeId: state.employee.id });
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <p className="max-w-3xl text-sm text-slate-600"><ProvenanceBadge state="actual" /> The backbone is derived from the case state, gates and dependency map, so it adapts when an approved change updates the case. <ProvenanceBadge state="proposed" /> AI adjustments need a Technical Lead (KT, alternatives, skips) or PMO (logistics) decision.</p>
-        <div className="flex flex-wrap items-start gap-2">{can(session, "ai.run") && <SuggestRoadmapButton employeeId={state.employee.id} />}{canPlan && <BaselineButton employeeId={state.employee.id} />}</div>
+        <div className="flex flex-wrap items-start gap-2">{can(scope, "ai.run", { employeeId: state.employee.id }) && <SuggestRoadmapButton employeeId={state.employee.id} />}{canPlan && <BaselineButton employeeId={state.employee.id} />}</div>
       </div>
       <Card title="Changes since the last approved version">
         {!baseline ? <p className="text-sm text-slate-500">No baseline approved yet. Approve the current plan to track how it adapts.</p>
           : diff.length ? <ul className="space-y-1 text-sm" data-testid="roadmap-diff">{diff.map((d) => <li key={d.key}><b>{d.title}</b>: {d.before.toLowerCase().replaceAll("_", " ")} → {d.after.toLowerCase().replaceAll("_", " ")}</li>)}</ul>
           : <p className="text-sm text-slate-500">No changes since the baseline approved by {caseRow.roadmapBaselineBy} on {formatDate(caseRow.roadmapBaselineAt)}.</p>}
       </Card>
-      <RoadmapTimeline backbone={backbone} canDecide={(kind) => can(session, deciderPermission(kind))}
+      <RoadmapTimeline backbone={backbone} canDecide={(kind) => can(scope, deciderPermission(kind), { employeeId: state.employee.id })}
         extras={rows.map((r) => ({ id: r.id, type: r.type, kind: r.kind, phase: r.phase, title: r.title, description: r.description, ownerRole: r.ownerRole, completionCriteria: r.completionCriteria, relatesToKey: r.relatesToKey, rationale: r.rationale, evidenceIds: parseJson(r.evidenceIds, [] as string[]), status: r.status, origin: r.origin, decidedBy: r.decidedBy }))} />
     </div>
   );

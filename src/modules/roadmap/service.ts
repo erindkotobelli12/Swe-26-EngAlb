@@ -8,19 +8,19 @@ import { audit, type Actor } from "@/modules/audit";
 import { loadCaseState } from "@/modules/case/loadCaseState";
 import { recomputeCase } from "@/modules/case/recompute";
 import { DecisionError } from "@/modules/detective/decisions";
-import { assertCan, type Principal } from "@/modules/permissions";
+import { assertAllowed, type Principal } from "@/modules/permissions";
 import { evaluateReadiness } from "@/modules/readiness/evaluate";
 import { buildBackbone, type BaselineEntry } from "./backbone";
 
 const actorOf = (p: Principal): Actor => ({ userId: p.userId, label: p.name, role: p.role });
 
-/** KT and alternative-activity items are technical (Technical Lead); logistics and ownership items belong to the PMO. */
+/** KT and alternative-activity items are technical (Technical Lead); logistics and ownership items belong to the phase owner or the Line Manager. */
 export const deciderPermission = (kind: string) => (kind === "LOGISTICS" || kind === "OWNERSHIP" ? "roadmap.decideLogistics" : "roadmap.decideTechnical") as "roadmap.decideLogistics" | "roadmap.decideTechnical";
 
 export type SuggestRoadmapResult = { ok: true; created: number; rejected: string[]; run: AIRunInfo } | { ok: false; error: string; run: AIRunInfo };
 
 export async function suggestRoadmap(employeeId: string, principal: Principal, db: PrismaClient = prisma): Promise<SuggestRoadmapResult> {
-  assertCan(principal, "ai.run");
+  await assertAllowed(principal, "ai.run", { employeeId }, db);
   const state = await loadCaseState(employeeId, db);
   if (!state) throw new DecisionError("Unknown case.");
   const items = buildBackbone(state, evaluateReadiness(state));
@@ -54,7 +54,7 @@ export async function suggestRoadmap(employeeId: string, principal: Principal, d
 export async function decideRoadmapItem(input: { id: string; decision: "APPROVE" | "REJECT"; reason?: string }, principal: Principal, db: PrismaClient = prisma): Promise<void> {
   const item = await db.roadmapItem.findUnique({ where: { id: input.id } });
   if (!item) throw new DecisionError("Unknown roadmap item.");
-  assertCan(principal, deciderPermission(item.kind));
+  await assertAllowed(principal, deciderPermission(item.kind), { employeeId: item.employeeId }, db);
   if (item.status !== "PROPOSED") throw new DecisionError("Already decided.");
   if (input.decision === "REJECT" && (input.reason ?? "").trim().length < 3) throw new DecisionError("A reason is required to reject.");
   const now = auditTimestamp();
@@ -75,7 +75,7 @@ export async function decideRoadmapItem(input: { id: string; decision: "APPROVE"
 
 /** Stores the current backbone as the approved baseline; later state changes are shown as a diff against it. */
 export async function approveBaseline(employeeId: string, principal: Principal, db: PrismaClient = prisma): Promise<void> {
-  if (principal.role !== "TECH_LEAD" && principal.role !== "PMO") throw new DecisionError("Only a Technical Lead or PMO can approve the plan baseline.");
+  await assertAllowed(principal, "roadmap.baseline", { employeeId }, db);
   const state = await loadCaseState(employeeId, db);
   if (!state) throw new DecisionError("Unknown case.");
   const baseline: BaselineEntry[] = buildBackbone(state, evaluateReadiness(state)).map(({ key, title, status }) => ({ key, title, status }));

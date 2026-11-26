@@ -1,5 +1,7 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
+import { getScope } from "@/server/principal";
+import { visibleEmployeeIds } from "@/modules/permissions";
 import { formatDate } from "@/lib/clock";
 import { loadPortfolio } from "@/modules/case/portfolio";
 import { levelLabel } from "@/modules/readiness/evaluate";
@@ -8,7 +10,7 @@ import EmployeeDirectory from "@/components/EmployeeDirectory";
 export default async function EmployeesPage() {
   const session = await getSession();
   if (session.role === "EMPLOYEE") redirect("/workspace");
-  const portfolio = await loadPortfolio();
+  const portfolio = await loadPortfolio(undefined, visibleEmployeeIds(await getScope()));
   return (
     <div className="px-5 py-6 md:px-8">
       <header>

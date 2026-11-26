@@ -3,9 +3,10 @@ import { redirect } from "next/navigation";
 import { Activity, AlertTriangle, GitCompareArrows, KeyRound, MailQuestion, RefreshCw, Timer, Users } from "lucide-react";
 import { prisma } from "@/lib/db";
 import { getSession } from "@/lib/auth";
+import { getScope } from "@/server/principal";
 import { formatDate, getEvaluationDate } from "@/lib/clock";
 import { headline, kpis, loadPortfolio } from "@/modules/case/portfolio";
-import { can } from "@/modules/permissions";
+import { can, visibleEmployeeIds } from "@/modules/permissions";
 import { levelLabel } from "@/modules/readiness/evaluate";
 import { classifyCaseStatus, RELIABILITY_LABEL } from "@/modules/reliability/classify";
 import { recomputeAllAction } from "@/server/actions/case";
@@ -17,13 +18,14 @@ const SUBTITLE: Record<string, string> = {
   PMO: "PMO overview — cross-project blockers, ownership gaps and follow-ups",
   TECH_LEAD: "Technical Lead overview — KT gaps and pending validations",
   LINE_MANAGER: "Line Manager overview — local practical blockers",
-  MANAGEMENT: "Management overview — readiness distribution and risk",
+  ADDITIONAL_MANAGER: "Additional Manager overview — your projects' readiness and risk",
+  HR: "HR overview — employees in pre-boarding",
 };
 
 export default async function Dashboard() {
-  const session = await getSession();
+  const [session, scope] = await Promise.all([getSession(), getScope()]);
   if (session.role === "EMPLOYEE") redirect("/workspace");
-  const [portfolio, runs] = await Promise.all([loadPortfolio(), prisma.aIRun.findMany({ orderBy: { createdAt: "desc" }, take: 5 })]);
+  const [portfolio, runs] = await Promise.all([loadPortfolio(undefined, visibleEmployeeIds(scope)), prisma.aIRun.findMany({ orderBy: { createdAt: "desc" }, take: 5 })]);
   const k = kpis(portfolio);
   const cards = [
     ["Official cases", k.total, Users, "text-indigo-600"],
@@ -47,7 +49,7 @@ export default async function Dashboard() {
         </div>
         <div className="flex flex-wrap items-center gap-3">
           <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-500">Evaluation date <b className="ml-2 text-slate-800">{formatDate(getEvaluationDate())}</b></div>
-          {can(session, "case.recompute") && <ActionButton action={recomputeAllAction} label="Re-run analysis" pendingLabel="Recomputing…" icon={<RefreshCw size={15} />} variant="secondary" />}
+          {can(scope, "case.recompute") && <ActionButton action={recomputeAllAction} label="Re-run analysis" pendingLabel="Recomputing…" icon={<RefreshCw size={15} />} variant="secondary" />}
         </div>
       </header>
 

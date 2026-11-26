@@ -37,7 +37,8 @@ describe("adaptive roadmap", () => {
       { type: "ADD", kind: "KT", phase: 2, title: "Invented activity", description: "Cites a source that does not exist.", ownerRole: "TECH_LEAD", completionCriteria: "n/a", relatesToKey: null, rationale: "No basis at all here.", evidenceIds: ["EMAIL-999"] },
       { type: "SKIP", kind: "KT", phase: 2, title: "Skip ticket handling", description: "No evidence of a validated competency.", ownerRole: "TECH_LEAD", completionCriteria: "n/a", relatesToKey: "kt:KT-ONB-002-TPL-SERVICE-DESK", rationale: "Assumed experience.", evidenceIds: [] },
     ] }) as T });
-    const r = await suggestRoadmap("ONB-002", pmo, db);
+    await expect(suggestRoadmap("ONB-002", pmo, db)).rejects.toBeInstanceOf(PermissionError);
+    const r = await suggestRoadmap("ONB-002", tl, db);
     expect(r.ok && r.created).toBe(1);
     expect(r.ok && r.rejected.length).toBe(2);
     const item = await db.roadmapItem.findFirstOrThrow({ where: { employeeId: "ONB-002", title: "Read the service-desk runbook" } });

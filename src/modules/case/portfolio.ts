@@ -8,9 +8,10 @@ export type PortfolioCase = { state: CaseState; readiness: ReadinessResult; open
 
 export const bySeverity = (a: FindingItem, b: FindingItem) => SEVERITY_RANK[b.severity] - SEVERITY_RANK[a.severity] || a.title.localeCompare(b.title);
 
-/** Read-only: loads and evaluates every official case. Never writes. */
-export async function loadPortfolio(db: PrismaClient = prisma): Promise<PortfolioCase[]> {
-  const ids = await listCaseEmployeeIds(db);
+/** Read-only: loads and evaluates every official case (or only `onlyIds`, e.g. a user's scope). Never writes. */
+export async function loadPortfolio(db: PrismaClient = prisma, onlyIds?: string[]): Promise<PortfolioCase[]> {
+  const all = await listCaseEmployeeIds(db, Boolean(onlyIds));
+  const ids = onlyIds ? all.filter((id) => onlyIds.includes(id)) : all;
   const out: PortfolioCase[] = [];
   for (const id of ids) {
     const state = await loadCaseState(id, db);

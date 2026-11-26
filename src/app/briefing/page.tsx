@@ -6,19 +6,22 @@ import { getSession } from "@/lib/auth";
 import { formatDate } from "@/lib/clock";
 import { parseJson } from "@/lib/json";
 import { can } from "@/modules/permissions";
-import { BRIEFING_ROLES, listBriefings } from "@/modules/briefing/service";
+import { getScope } from "@/server/principal";
+import { briefingRolesFor, listBriefings } from "@/modules/briefing/service";
 import type { BriefingRole, Section } from "@/modules/briefing/select";
 import { GenerateBriefingButton, PrintButton } from "@/components/briefing/BriefingControls";
 import { EmptyState, OriginBadge, ProvenanceBadge } from "@/components/ui/badges";
 
-const ROLE_NAME: Record<BriefingRole, string> = { PMO: "PMO", TECH_LEAD: "Technical Lead", MANAGEMENT: "Management", LINE_MANAGER: "Line Manager" };
+const ROLE_NAME: Record<BriefingRole, string> = { PMO: "PMO", ADDITIONAL_MANAGER: "Additional Manager", LINE_MANAGER: "Line Manager", TECH_LEAD: "Technical Lead", HR: "HR" };
 
 export default async function BriefingPage({ searchParams }: { searchParams: Promise<{ role?: string; id?: string }> }) {
-  const session = await getSession();
-  if (!can(session, "briefing.generate")) redirect("/workspace");
+  const [session, scope] = await Promise.all([getSession(), getScope()]);
+  if (!can(scope, "briefing.generate")) redirect("/");
   const sp = await searchParams;
-  const role: BriefingRole = (BRIEFING_ROLES as string[]).includes(sp.role ?? "") ? (sp.role as BriefingRole) : (BRIEFING_ROLES as string[]).includes(session.role) ? (session.role as BriefingRole) : "PMO";
-  const history = await listBriefings(role);
+  const allowed = briefingRolesFor(scope);
+  if (!allowed.length) redirect("/");
+  const role: BriefingRole = allowed.includes(sp.role as BriefingRole) ? (sp.role as BriefingRole) : allowed.includes(session.role as BriefingRole) ? (session.role as BriefingRole) : allowed[0];
+  const history = (await listBriefings(role)).filter((b) => b.generatedBy === session.name);
   const current = (sp.id && history.find((b) => b.id === sp.id)) || history[0] || null;
   const sections = current ? parseJson<Section[]>(current.sectionsJson, []) : [];
   const findingIds = sections.flatMap((s) => s.statements.flatMap((x) => x.refs)).filter((r) => r.startsWith("finding:")).map((r) => r.slice(8));
@@ -43,7 +46,7 @@ export default async function BriefingPage({ searchParams }: { searchParams: Pro
         <GenerateBriefingButton role={role} />
       </header>
       <nav className="no-print mt-4 flex flex-wrap gap-2 text-sm">
-        {BRIEFING_ROLES.map((r) => <Link key={r} href={`/briefing?role=${r}`} className={`rounded-full px-3 py-1 font-semibold ${r === role ? "bg-indigo-600 text-white" : "border bg-white text-slate-600"}`}>{ROLE_NAME[r]}</Link>)}
+        {allowed.length > 1 && allowed.map((r) => <Link key={r} href={`/briefing?role=${r}`} className={`rounded-full px-3 py-1 font-semibold ${r === role ? "bg-indigo-600 text-white" : "border bg-white text-slate-600"}`}>{ROLE_NAME[r]}</Link>)}
       </nav>
 
       {current ? (

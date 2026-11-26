@@ -7,7 +7,9 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// Demo login identity. `role` drives permissions; `employeeId` maps employee users to their own case.
+// Demo login identity. `role` is the account's primary persona (PMO | HR | ADDITIONAL_MANAGER | LINE_MANAGER | TECH_LEAD | EMPLOYEE).
+// PMO and HR are organisation-level roles. Project roles come from ProjectAssignment rows, so permissions are
+// resolved from role + relationship + phase (src/modules/permissions.ts), never from this column alone.
 model User {
   id         String     @id
   name       String
@@ -15,25 +17,35 @@ model User {
   role       String
   employee   Employee?  @relation(fields: [employeeId], references: [id])
   employeeId String?    @unique
-  personId   String?
+  personId   String?    @unique
+  person     Person?    @relation(fields: [personId], references: [id])
   audited    AuditLog[]
 }
 
-// A stakeholder. Only names present in the starter pack are seeded; unknown holders of a role are role-only records (name = null).
-// role: EMPLOYEE | LINE_MANAGER | TECH_LEAD | KT_OWNER | PMO | HR | ACCESS_SUPPORT | APP_OWNER | TECH_MANAGER | MANAGEMENT | PROJECT_MANAGER
+// A person with a profile. Only names present in the starter pack are seeded as starter-pack people; anyone else is
+// either a role-only record (name = null) or a clearly labelled sample person (isSimulated = true).
+// role (primary / organisation role): EMPLOYEE | LINE_MANAGER | TECH_LEAD | ADDITIONAL_MANAGER | KT_OWNER | PMO | HR |
+//   ACCESS_SUPPORT | APP_OWNER | TECH_MANAGER | PROJECT_MANAGER
 model Person {
-  id          String   @id
+  id          String              @id
   name        String?
   role        String
   projectId   String?
-  project     Project? @relation(fields: [projectId], references: [id])
-  isSimulated Boolean  @default(false)
+  project     Project?            @relation(fields: [projectId], references: [id])
+  isSimulated Boolean             @default(false)
   note        String?
+  employee    Employee?
+  user        User?
+  assignments ProjectAssignment[] @relation("AssignmentPerson")
+  reports     ProjectAssignment[] @relation("AssignmentReportsTo")
 }
 
+// The onboarding-case anchor. Each employee is a Person (personId) with a profile; `name` keeps the tracker's verbatim name.
 model Employee {
   id              String                @id
   name            String
+  personId        String?               @unique
+  person          Person?               @relation(fields: [personId], references: [id])
   startDate       String
   movement        String
   projectId       String?
@@ -55,19 +67,59 @@ model Employee {
   user            User?
 }
 
+// status: ACTIVE | CLOSED
 model Project {
-  id        String              @id
-  name      String
-  employees Employee[]
-  evidence  Evidence[]
-  resources KnowledgeResource[]
-  people    Person[]
+  id          String              @id
+  name        String
+  code        String?
+  description String?
+  startDate   String?
+  status      String              @default("ACTIVE")
+  isSimulated Boolean             @default(false)
+  createdById String?
+  createdAt   String?
+  employees   Employee[]
+  evidence    Evidence[]
+  resources   KnowledgeResource[]
+  people      Person[]
+  assignments ProjectAssignment[]
 }
 
+// A person's role on a project. Never hard-deleted: removal sets status REMOVED (or COMPLETED) with an end date, and is audited.
+// role: ADDITIONAL_MANAGER | LINE_MANAGER | TECH_LEAD | EMPLOYEE. One person may hold several roles on one project
+// (e.g. Line Manager and Technical Lead). Reporting line: Employee → Line Manager → Additional Manager (reportsToPersonId).
+// status: ACTIVE | COMPLETED | REMOVED
+model ProjectAssignment {
+  id                String   @id @default(cuid())
+  projectId         String
+  project           Project  @relation(fields: [projectId], references: [id])
+  personId          String
+  person            Person   @relation("AssignmentPerson", fields: [personId], references: [id])
+  role              String
+  reportsToPersonId String?
+  reportsTo         Person?  @relation("AssignmentReportsTo", fields: [reportsToPersonId], references: [id])
+  assignedById      String
+  assignedAt        String
+  startDate         String?
+  endDate           String?
+  status            String   @default("ACTIVE")
+  movement          String?
+  endReason         String?
+  isSimulated       Boolean  @default(false)
+
+  @@index([projectId, role, status])
+  @@index([personId, status])
+}
+
+// phase: PRE_BOARDING | ONBOARDING | READY | CLOSED — separate from readiness level and reliability.
+// Only humans change phase (hand-over by the Line Manager; READY only through a Technical Lead's validation).
 model OnboardingCase {
   id                String                @id
   employeeId        String                @unique
   employee          Employee              @relation(fields: [employeeId], references: [id])
+  phase             String                @default("ONBOARDING")
+  phaseChangedAt    String?
+  phaseChangedBy    String?
   assessedStatus    String                @default("UNKNOWN")
   validatedStatus   String                @default("UNKNOWN")
   riskFlags         String                @default("[]")

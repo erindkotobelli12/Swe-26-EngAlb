@@ -4,6 +4,7 @@ import { thresholds } from "@/config/thresholds";
 import { getSession } from "@/lib/auth";
 import { parseJson } from "@/lib/json";
 import { can } from "@/modules/permissions";
+import { getScope } from "@/server/principal";
 import { loadFollowUpQueue } from "@/modules/followups/service";
 import type { FollowUpItem } from "@/modules/followups/candidates";
 import { CommunicationCard, CreateDraftButton, ItemList } from "@/components/followups/FollowUpCards";
@@ -12,8 +13,11 @@ import { EmptyState, ProvenanceBadge } from "@/components/ui/badges";
 export default async function FollowUpCenter() {
   const session = await getSession();
   if (session.role === "EMPLOYEE") redirect("/workspace");
-  const { groups, communications, employees } = await loadFollowUpQueue();
-  const canAct = can(session, "communication.approve");
+  const scope = await getScope();
+  const { groups, communications, employees } = await loadFollowUpQueue(undefined, scope);
+  const canAct = can(scope, "communication.approve");
+  const canActOn = (ids: string[]) => can(scope, "communication.approve", { employeeIds: ids });
+  const actionable = groups.filter((g) => g.items.some((i) => can(scope, "communication.approve", { employeeId: i.employeeId })));
   const toCard = (c: (typeof communications)[number]) => ({
     ...c, items: parseJson<FollowUpItem[]>(c.itemsJson, []),
     employees: parseJson<string[]>(c.employeeIds, []).map((id) => ({ id, name: employees.get(id) ?? id })),
@@ -29,11 +33,11 @@ export default async function FollowUpCenter() {
           <h1 className="mt-1 text-2xl font-bold">Follow-Up Center</h1>
           <p className="mt-2 max-w-3xl text-sm text-slate-600">Pending items are grouped into one message per stakeholder. Drafts start as deterministic templates; the AI can personalise them; the PMO edits and approves; “Send” only places them in a <b>simulated outbox</b>. Reminder after {thresholds.REMINDER_AFTER_DAYS} days, escalation <i>recommended</i> after {thresholds.ESCALATE_AFTER_DAYS} days — never automatic.</p>
         </div>
-        {canAct && groups.length > 0 && <CreateDraftButton keys="ALL" label={`Create drafts for all (${groups.length})`} />}
+        {canAct && actionable.length > 0 && <CreateDraftButton keys="ALL" label={`Create drafts for all (${actionable.length})`} />}
       </header>
 
       <h2 className="mt-6 text-lg font-bold">Active follow-ups <span className="text-sm font-normal text-slate-500">({active.length})</span></h2>
-      <div className="mt-3 space-y-4">{active.length ? active.map((c) => <CommunicationCard key={`${c.id}-${c.status}-${c.draftOrigin}-${c.subject}`} c={toCard(c)} canAct={canAct} />) : <EmptyState title="No drafts yet">Create drafts from the queue below.</EmptyState>}</div>
+      <div className="mt-3 space-y-4">{active.length ? active.map((c) => <CommunicationCard key={`${c.id}-${c.status}-${c.draftOrigin}-${c.subject}`} c={toCard(c)} canAct={canActOn(parseJson<string[]>(c.employeeIds, []))} />) : <EmptyState title="No drafts yet">Create drafts from the queue below.</EmptyState>}</div>
 
       <h2 className="mt-8 text-lg font-bold">Queue — not yet drafted <span className="text-sm font-normal text-slate-500">({groups.length} stakeholder(s), {groups.reduce((n, g) => n + g.items.length, 0)} item(s))</span></h2>
       <p className="mt-1 flex items-center gap-2 text-xs text-slate-500"><ProvenanceBadge state="actual" /> Detected deterministically from open findings, access requests and action items.</p>
@@ -45,7 +49,7 @@ export default async function FollowUpCenter() {
                 <p className="flex items-center gap-2 font-bold">{g.stakeholder.channel === "TEAMS" ? <MessageSquare size={15} /> : <Mail size={15} />}{g.stakeholder.label}</p>
                 <p className="mt-0.5 text-xs text-slate-500">{g.items.length} item(s) · priority {g.score} · {g.stakeholder.channel === "TEAMS" ? "Teams (named person)" : "Email (role mailbox)"}</p>
               </div>
-              {canAct && <CreateDraftButton keys={[g.stakeholder.key]} label="Create draft" />}
+              {actionable.includes(g) && <CreateDraftButton keys={[g.stakeholder.key]} label="Create draft" />}
             </div>
             {g.escalationRecommendation && <p className="mt-2 rounded-lg border border-orange-200 bg-orange-50 p-2 text-xs text-orange-900">{g.escalationRecommendation}</p>}
             <ItemList items={g.items} />

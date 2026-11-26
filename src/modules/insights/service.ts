@@ -3,7 +3,7 @@ import { prisma } from "@/lib/db";
 import { runAgent, type AIRunInfo } from "@/ai/runAgent";
 import * as prompt from "@/ai/prompts/insights";
 import { loadPortfolio } from "@/modules/case/portfolio";
-import { assertCan, type Principal } from "@/modules/permissions";
+import { assertAllowed, type Principal } from "@/modules/permissions";
 import { aggregate, type Bar, type Insights } from "./aggregate";
 
 export async function loadInsights(db: PrismaClient = prisma): Promise<Insights> {
@@ -25,8 +25,8 @@ export type HypothesesResult = { ok: true; hypotheses: Hypothesis[]; rejected: n
 
 /** Bottleneck Insight Agent. Every hypothesis must cite real figure keys and only the case IDs those figures count. */
 export async function generateHypotheses(principal: Principal, db: PrismaClient = prisma): Promise<HypothesesResult> {
-  assertCan(principal, "insights.view");
-  assertCan(principal, "ai.run");
+  await assertAllowed(principal, "insights.view", {}, db);
+  await assertAllowed(principal, "ai.run", {}, db);
   const figures = figuresOf(await loadInsights(db)).map(({ key, label, value, caseIds }) => ({ key, label, value, caseIds }));
   const outcome = await runAgent({ agent: "bottleneck_insights", promptVersion: prompt.PROMPT_VERSION, input: figures, inputRefs: [...new Set(figures.flatMap((f) => f.caseIds))], system: prompt.SYSTEM, user: prompt.buildUser(figures), schema: prompt.InsightSchema, db });
   if (!outcome.ok) return outcome;

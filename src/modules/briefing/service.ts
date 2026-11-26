@@ -7,10 +7,30 @@ import * as prompt from "@/ai/prompts/briefing";
 import { audit } from "@/modules/audit";
 import { loadPortfolio } from "@/modules/case/portfolio";
 import { loadFollowUpQueue } from "@/modules/followups/service";
-import { assertCan, type Principal } from "@/modules/permissions";
+import { assertAllowed, heldRoles, type Principal, type Scope } from "@/modules/permissions";
+import { DecisionError } from "@/modules/detective/decisions";
 import { selectBriefing, snapshotOf, type BriefingRole, type Section, type Snapshot, type Statement } from "./select";
 
-export const BRIEFING_ROLES: BriefingRole[] = ["PMO", "TECH_LEAD", "MANAGEMENT", "LINE_MANAGER"];
+export const BRIEFING_ROLES: BriefingRole[] = ["PMO", "ADDITIONAL_MANAGER", "LINE_MANAGER", "TECH_LEAD", "HR"];
+
+/** Briefing variants a user may generate: one per role they hold (never another role's variant). */
+export function briefingRolesFor(scope: Scope): BriefingRole[] {
+  const held = heldRoles(scope);
+  return BRIEFING_ROLES.filter((r) => held.includes(r));
+}
+
+/** Cases a briefing covers: the PMO's whole portfolio, otherwise only the cases in the author's scope (optionally one project). */
+function inScope(scope: Scope, role: BriefingRole, projectId?: string | null) {
+  return (c: { state: { employee: { id: string; projectId: string | null } } }) => {
+    if (projectId && c.state.employee.projectId !== projectId) return false;
+    if (role === "PMO") return scope.isPMO;
+    const rel = scope.cases[c.state.employee.id]?.relations ?? [];
+    if (role === "HR") return rel.includes("HR");
+    if (role === "ADDITIONAL_MANAGER") return rel.includes("AM");
+    if (role === "LINE_MANAGER") return rel.includes("LM");
+    return rel.includes("TL");
+  };
+}
 
 /** A statement is valid only if every ref exists in the deterministic selection for that section. */
 export function validateStatements(statements: Statement[], allowedRefs: Set<string>): { valid: Statement[]; rejected: number } {
@@ -23,17 +43,22 @@ export function validateStatements(statements: Statement[], allowedRefs: Set<str
   return { valid, rejected };
 }
 
-export async function generateBriefing(role: BriefingRole, principal: Principal, db: PrismaClient = prisma): Promise<string> {
-  assertCan(principal, "briefing.generate");
-  const [portfolio, queue, actions, previousRow] = await Promise.all([
+export async function generateBriefing(role: BriefingRole, principal: Principal, db: PrismaClient = prisma, opts: { projectId?: string | null } = {}): Promise<string> {
+  const scope = await assertAllowed(principal, "briefing.generate", {}, db);
+  if (!briefingRolesFor(scope).includes(role)) throw new DecisionError("You can only generate the briefing for a role you hold.");
+  const keep = inScope(scope, role, opts.projectId);
+  const [allCases, queue, actions, previousRow] = await Promise.all([
     loadPortfolio(db),
-    loadFollowUpQueue(db),
+    loadFollowUpQueue(db, scope),
     db.actionItem.findMany({ where: { status: { in: ["OPEN", "IN_PROGRESS"] } }, include: { employee: true } }),
     db.briefing.findFirst({ where: { role }, orderBy: { generatedAt: "desc" } }),
   ]);
+  const portfolio = allCases.filter(keep);
+  const ids = new Set(portfolio.map((c) => c.state.employee.id));
+  const groups = queue.groups.map((g) => ({ ...g, items: g.items.filter((i) => ids.has(i.employeeId)) })).filter((g) => g.items.length);
   const evaluationDate = getEvaluationDate();
   const previous = previousRow ? { snapshot: parseJson<Snapshot>(previousRow.snapshotJson, { levels: {}, openFindings: {}, resolved: [] }), generatedAt: previousRow.generatedAt } : null;
-  const deterministic = selectBriefing(role, portfolio, queue.groups, actions.map((a) => ({ id: a.id, employeeName: a.employee?.name ?? "Unknown", title: a.title, dueDate: a.dueDate, ownerRole: a.ownerRole })), previous, evaluationDate);
+  const deterministic = selectBriefing(role, portfolio, groups, actions.filter((a) => a.employeeId && ids.has(a.employeeId)).map((a) => ({ id: a.id, employeeName: a.employee?.name ?? "Unknown", title: a.title, dueDate: a.dueDate, ownerRole: a.ownerRole })), previous, evaluationDate);
 
   const outcome = await runAgent({
     agent: "briefing", promptVersion: prompt.PROMPT_VERSION, input: { role, deterministic }, inputRefs: [...new Set(deterministic.flatMap((s) => s.statements.flatMap((x) => x.refs)))].slice(0, 200),

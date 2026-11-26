@@ -1,5 +1,5 @@
 import { PrismaClient } from "@prisma/client";
-import { afterAll, afterEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { AIResponseError, setAIProviderForTests, type AIProvider } from "../../src/ai/providers";
 import { generateBriefing, validateStatements } from "../../src/modules/briefing/service";
 import type { Section } from "../../src/modules/briefing/select";
@@ -8,8 +8,13 @@ import type { Principal } from "../../src/modules/permissions";
 const db = new PrismaClient();
 afterEach(() => setAIProviderForTests(null));
 afterAll(() => db.$disconnect());
-const pmo: Principal = { userId: "demo-pmo", role: "PMO", employeeId: null, name: "PMO" };
-const tl: Principal = { userId: "demo-tl", role: "TECH_LEAD", employeeId: null, name: "TL" };
+const pmo: Principal = { userId: "demo-pmo", role: "PMO", employeeId: null, name: "Petra Lind" };
+const tl: Principal = { userId: "demo-tl", role: "TECH_LEAD", employeeId: null, name: "Ben Okafor" };
+// Orion's Technical Lead exists only as a role in the starter pack (EMAIL-003); a test principal stands in for them.
+const orionTl: Principal = { userId: "test-tl-orion", role: "TECH_LEAD", employeeId: null, name: "Technical Lead — Orion", personId: "P-TL-ORION" };
+beforeAll(async () => {
+  await db.user.upsert({ where: { id: orionTl.userId }, update: {}, create: { id: orionTl.userId, name: orionTl.name, email: "tl-orion.test@onboardiq.demo", role: "TECH_LEAD", personId: "P-TL-ORION" } });
+});
 const double = (impl: AIProvider["complete"]): AIProvider => ({ model: () => "test-double", complete: impl });
 
 describe("management briefing", () => {
@@ -44,9 +49,12 @@ describe("management briefing", () => {
     expect(urgent.statements.map((s) => s.text)).toEqual(["Top risk first."]);
   });
 
-  it("selects different content per role", async () => {
+  it("selects different content per role, limited to the author's scope", async () => {
     setAIProviderForTests(double(async () => { throw new AIResponseError("down", 503, "UNAVAILABLE"); }));
-    const tlBrief = await db.briefing.findUniqueOrThrow({ where: { id: await generateBriefing("TECH_LEAD", tl, db) } });
+    const ben = await db.briefing.findUniqueOrThrow({ where: { id: await generateBriefing("TECH_LEAD", tl, db) } });
+    expect(ben.sectionsJson).not.toContain("Eva Stone");
+    await expect(generateBriefing("PMO", tl, db)).rejects.toThrow(/role you hold/);
+    const tlBrief = await db.briefing.findUniqueOrThrow({ where: { id: await generateBriefing("TECH_LEAD", orionTl, db) } });
     const keys = (JSON.parse(tlBrief.sectionsJson) as Section[]).map((s) => s.key);
     expect(keys).toContain("validations");
     expect(keys).not.toContain("urgent");

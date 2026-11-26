@@ -33,6 +33,9 @@ export type OpenAction = { id: string; employeeId: string; findingId: string | n
 
 const SEVERITY_POINTS: Record<Severity, number> = { CRITICAL: 40, HIGH: 25, MEDIUM: 10, LOW: 5 };
 
+/** Escalations go up the hierarchy: Line Manager → Additional Manager → PMO. Anyone else escalates to the employee's Line Manager. */
+const ESCALATE_TO: Partial<Record<string, string>> = { LINE_MANAGER: "the Additional Manager", ADDITIONAL_MANAGER: "the PMO", PMO: "the PMO" };
+
 /** Who follows up on what, by finding type. Unresolvable owners go to the PMO as "identify owner". */
 const ROUTE: Partial<Record<string, string>> = {
   CONFLICTING_EVIDENCE: "TECH_LEAD", CLOSURE_WITHOUT_EVIDENCE: "TECH_LEAD", UNVERIFIED_SELF_REPORT: "TECH_LEAD", MISSING_READINESS_DATE: "TECH_LEAD",
@@ -171,7 +174,7 @@ export function buildFollowUps(
     g.score = Math.max(...g.items.map((i) => i.score));
     const top = g.items.reduce((m, i) => (i.escalationLevel > m ? i.escalationLevel : m), 0 as 0 | 1 | 2);
     g.escalationLevel = top;
-    const target = g.stakeholder.role === "LINE_MANAGER" || g.stakeholder.role === "TECH_LEAD" || g.stakeholder.role === "KT_OWNER" ? "the Technical Manager" : "the employee's Line Manager or the Technical Manager";
+    const target = ESCALATE_TO[g.stakeholder.role] ?? "the employee's Line Manager";
     g.escalationRecommendation = top === 2
       ? `Escalation recommended to ${target}: ${g.items.filter((i) => i.escalationLevel === 2).length} item(s) open ≥ ${thresholds.ESCALATE_AFTER_DAYS} days (ESCALATE_AFTER_DAYS). Not sent automatically.`
       : top === 1 ? `Reminder due: item(s) open ≥ ${thresholds.REMINDER_AFTER_DAYS} days (REMINDER_AFTER_DAYS).` : null;
@@ -186,7 +189,7 @@ function mergeDuplicates(items: FollowUpItem[]): FollowUpItem[] {
 }
 
 /** Deterministic template draft (clearly labelled; the AI can personalise it on request). */
-export function templateDraft(group: FollowUpGroup, sender = "PMO Coordinator"): { subject: string; body: string } {
+export function templateDraft(group: FollowUpGroup, sender = "OnboardIQ"): { subject: string; body: string } {
   const employees = [...new Set(group.items.map((i) => i.employeeName))];
   const subject = `Follow-up: ${group.items.length} open onboarding item${group.items.length > 1 ? "s" : ""}${employees.length === 1 ? ` for ${employees[0]}` : ""}`;
   const lines = employees.flatMap((name) => [
