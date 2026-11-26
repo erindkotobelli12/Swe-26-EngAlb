@@ -39,6 +39,9 @@ import EvidenceCard from "@/components/evidence/EvidenceCard";
 import AddEvidenceForm from "@/components/evidence/AddEvidenceForm";
 import { ClaimReview, EvidenceTools } from "@/components/evidence/ReviewControls";
 import { Card, EmptyState, EvidenceChip, ProvenanceBadge, SeverityBadge } from "@/components/ui/badges";
+import { EmptyState as UIEmptyState } from "@/components/ui/primitives";
+import { PreboardingChecklist } from "@/components/preboarding/Checklist";
+import { openHrItems } from "@/modules/preboarding/service";
 
 export default async function EmployeeCase({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ tab?: string; preset?: string }> }) {
   const [{ id }, { tab: rawTab, preset }, session, scope] = await Promise.all([params, searchParams, getSession(), getScope()]);
@@ -134,6 +137,7 @@ export default async function EmployeeCase({ params, searchParams }: { params: P
         {tab === "history" && <HistoryTab employeeId={id} />}
         {tab === "followups" && <FollowUpsTab employeeId={id} />}
         {tab === "roadmap" && <RoadmapTab state={state} readiness={readiness} scope={scope} />}
+        {tab === "preboarding" && <PreboardingTab employeeId={id} name={state.employee.name} scope={scope} />}
       </div>
     </div>
   );
@@ -223,6 +227,19 @@ async function RoadmapTab({ state, readiness, scope }: { state: CaseState; readi
       <RoadmapTimeline backbone={backbone} canDecide={(kind) => can(scope, deciderPermission(kind), { employeeId: state.employee.id })}
         extras={rows.map((r) => ({ id: r.id, type: r.type, kind: r.kind, phase: r.phase, title: r.title, description: r.description, ownerRole: r.ownerRole, completionCriteria: r.completionCriteria, relatesToKey: r.relatesToKey, rationale: r.rationale, evidenceIds: parseJson(r.evidenceIds, [] as string[]), status: r.status, origin: r.origin, decidedBy: r.decidedBy }))} />
     </div>
+  );
+}
+
+async function PreboardingTab({ employeeId, name, scope }: { employeeId: string; name: string; scope: Scope }) {
+  const [items, hrOpen] = await Promise.all([prisma.preboardingItem.findMany({ where: { employeeId }, orderBy: { sortOrder: "asc" } }), openHrItems(employeeId)]);
+  const phase = scope.cases[employeeId]?.phase;
+  if (!items.length) return <UIEmptyState title="No pre-boarding checklist for this case.">This person was already past pre-boarding when OnboardIQ started tracking them.</UIEmptyState>;
+  const today = getEvaluationDate();
+  return (
+    <Card title="Pre-boarding checklist" actions={phase !== "PRE_BOARDING" ? <span className="text-xs text-subtle">Finished — kept for reference</span> : undefined}>
+      <PreboardingChecklist employeeId={employeeId} name={name} canEdit={can(scope, "preboarding.update", { employeeId })} canHandover={can(scope, "handover.confirm", { employeeId })} hrOpen={hrOpen.length}
+        items={items.map((i) => ({ id: i.id, title: i.title, category: i.category, ownerRole: i.ownerRole, status: i.status, blockerReason: i.blockerReason, note: i.note, dueDate: i.dueDate, overdue: Boolean(i.dueDate && i.dueDate < today && !["DONE", "NOT_APPLICABLE"].includes(i.status)), updatedBy: i.updatedBy, updatedAt: i.updatedAt, evidenceId: i.evidenceId }))} />
+    </Card>
   );
 }
 

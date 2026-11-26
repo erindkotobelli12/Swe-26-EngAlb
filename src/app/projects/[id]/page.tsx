@@ -14,9 +14,11 @@ import { ButtonLink, Card, EmptyState, LinkTabs, PersonChip, SampleTag, StatCard
 import { HealthPill, TeamTree } from "@/components/projects/ProjectParts";
 import { ChooseTechLead, EndAssignmentButton } from "@/components/projects/ProjectActions";
 import { BriefingPanel } from "@/components/briefing/BriefingPanel";
+import { PreboardingBoard } from "@/components/preboarding/Board";
+import { loadPreboarding } from "@/modules/preboarding/queries";
 import { SEVERITY_LABEL } from "@/lib/labels";
 
-type Tab = "overview" | "team" | "briefing";
+type Tab = "overview" | "team" | "preboarding" | "briefing";
 
 export default async function ProjectPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ tab?: string }> }) {
   const [{ id }, sp, scope, session] = await Promise.all([params, searchParams, getScope(), getSession()]);
@@ -25,7 +27,7 @@ export default async function ProjectPage({ params, searchParams }: { params: Pr
     return <EmptyState icon={ShieldAlert} title="This project isn't available." action={<ButtonLink href="/">Go to my home page</ButtonLink>}>It doesn&apos;t exist, or it isn&apos;t one of your projects.</EmptyState>;
   }
   const p = detail.summary;
-  const tabs: { id: Tab; label: string }[] = [{ id: "overview", label: "Overview" }, { id: "team", label: "Team" }, { id: "briefing", label: "Briefing" }];
+  const tabs: { id: Tab; label: string; count?: number }[] = [{ id: "overview", label: "Overview" }, { id: "team", label: "Team" }, { id: "preboarding", label: "Pre-boarding", count: p.byPhase.PRE_BOARDING }, { id: "briefing", label: "Briefing" }];
   const tab: Tab = tabs.find((t) => t.id === sp.tab)?.id ?? "overview";
   const canChooseTl = can(scope, "project.chooseTechLead", { projectId: id });
   const canManage = can(scope, "project.manage");
@@ -113,6 +115,8 @@ export default async function ProjectPage({ params, searchParams }: { params: Pr
           )}
         </div>
       )}
+
+      {tab === "preboarding" && <PreboardingBoard rows={await loadPreboarding(scope, undefined, { projectId: id })} emptyText={p.byPhase.PRE_BOARDING ? "Pre-boarding on this project isn't visible to you." : "Nobody on this project is in pre-boarding."} />}
 
       {tab === "briefing" && (briefingRole
         ? <BriefingPanel role={briefingRole} userId={session.userId} projectId={id} roleLabel={roleLabel(briefingRole)} />

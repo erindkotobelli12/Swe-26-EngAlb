@@ -10,6 +10,7 @@ const L = {
   dashboard: { href: "/dashboard", label: "Overview", icon: "portfolio" },
   projects: { href: "/projects", label: "Projects", icon: "projects" },
   profile: { href: "/profile", label: "My profile", icon: "profile", match: ["/people"] },
+  preboarding: { href: "/preboarding", label: "Pre-boarding", icon: "preboarding" },
   employees: { href: "/employees", label: "Employees", icon: "employees" },
   investigations: { href: "/investigations", label: "Investigations", icon: "investigations" },
   followups: { href: "/follow-ups", label: "Follow-ups", icon: "followups" },
@@ -25,9 +26,9 @@ const L = {
 const NAV: Record<Persona, NavGroup[]> = {
   PMO: [{ items: [L.dashboard, L.projects, L.employees] }, { label: "Oversight", items: [L.briefing, L.insights] }, { label: "Records", items: [L.audit] }],
   ADDITIONAL_MANAGER: [{ items: [L.dashboard, L.projects, L.employees] }, { label: "Oversight", items: [L.briefing, L.insights] }],
-  LINE_MANAGER: [{ items: [L.dashboard, L.employees] }, { label: "Work", items: [L.followups, L.briefing] }],
+  LINE_MANAGER: [{ items: [L.dashboard, L.employees] }, { label: "Work", items: [L.preboarding, L.followups, L.briefing] }],
   TECH_LEAD: [{ items: [L.dashboard, L.employees] }, { label: "Work", items: [L.investigations, L.evidence, L.followups, L.briefing] }, { label: "Records", items: [L.audit] }],
-  HR: [{ items: [L.dashboard, L.employees] }, { label: "Work", items: [L.followups, L.briefing] }],
+  HR: [{ items: [L.preboarding] }, { label: "Work", items: [L.followups, L.briefing] }],
   EMPLOYEE: [{ items: [L.myOnboarding, L.profile, L.knowledge, L.assistant] }],
 };
 
@@ -50,5 +51,5 @@ export function navigationFor(scope: Scope): NavGroup[] {
 
 /** Each role's home page; `/` redirects there. */
 export function homeFor(role: Persona): string {
-  return role === "EMPLOYEE" ? "/workspace" : "/dashboard";
+  return role === "EMPLOYEE" ? "/workspace" : role === "HR" ? "/preboarding" : "/dashboard";
 }
