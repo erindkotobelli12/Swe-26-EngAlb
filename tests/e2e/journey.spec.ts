@@ -137,6 +137,24 @@ test("7. Eva: side-by-side conflict; the Technical Lead records NEEDS_MORE_EVIDE
   await expect(page.getByText("Only a Technical Lead can record a validation decision.")).toBeVisible();
 });
 
+test("8. Briefing: TL and PMO get different, fully referenced content; Markdown export", async ({ page }) => {
+  test.setTimeout(400_000);
+  for (const [user, role, section] of [["demo-tl", "TECH_LEAD", "Outstanding technical validations"], ["demo-pmo", "PMO", "Most urgent problems"]] as const) {
+    await as(page, user);
+    await page.goto(`/briefing?role=${role}`);
+    await page.getByRole("button", { name: "Generate briefing" }).click();
+    const briefing = page.getByTestId("briefing");
+    await expect(briefing.getByRole("heading", { name: section })).toBeVisible({ timeout: 300_000 });
+    const statements = briefing.locator("[data-statement]");
+    expect(await statements.count()).toBeGreaterThan(0);
+    for (const s of await statements.all()) expect(await s.locator("a").count()).toBeGreaterThan(0);
+  }
+  const href = await page.getByRole("link", { name: "Markdown" }).getAttribute("href");
+  const md = await page.request.get(href!);
+  expect(md.headers()["content-type"]).toContain("text/markdown");
+  expect(await md.text()).toContain("## Most urgent problems");
+});
+
 test("AI Detective adds root-cause hypotheses to Leo's findings @llm", async ({ page }) => {
   test.setTimeout(600_000);
   await as(page, "demo-pmo");

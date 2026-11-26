@@ -343,6 +343,22 @@ model Communication {
   closedAt                 String?
 }
 
+// A role-specific management briefing. Every statement carries refs (finding:/evidence:/action:) validated server-side.
+// narrativeSource: AI (validated AI narrative) | DETERMINISTIC (AI unavailable or rejected; rule-generated statements).
+model Briefing {
+  id              String  @id @default(cuid())
+  role            String
+  generatedAt     String
+  generatedBy     String
+  evaluationDate  String
+  sectionsJson    String
+  snapshotJson    String
+  narrativeSource String
+  aiRunId         String?
+  aiError         String?
+  rejectedCount   Int     @default(0)
+}
+
 // AI transparency log: every agent call, cached by inputHash. inputRefs holds IDs only.
 model AIRun {
   id            String @id @default(cuid())

@@ -12,6 +12,7 @@ const ENTRIES: Entry[] = [
   { href: "/employees", label: "Employees", icon: "employees", roles: ["PMO", "TECH_LEAD", "LINE_MANAGER", "MANAGEMENT"] },
   { href: "/investigations", label: "Investigations", icon: "investigations", roles: ["PMO", "TECH_LEAD", "MANAGEMENT"] },
   { href: "/follow-ups", label: "Follow-Up Center", icon: "followups", roles: ["PMO", "TECH_LEAD", "LINE_MANAGER"] },
+  { href: "/briefing", label: "Briefing", icon: "briefing", roles: ["PMO", "TECH_LEAD", "LINE_MANAGER", "MANAGEMENT"] },
   { href: "/evidence", label: "Evidence inbox", icon: "evidence", roles: ["PMO", "TECH_LEAD", "LINE_MANAGER"] },
   { href: "/knowledge", label: "Knowledge", icon: "knowledge" },
   { href: "/workspace", label: "My workspace", icon: "workspace", roles: ["EMPLOYEE"] },
