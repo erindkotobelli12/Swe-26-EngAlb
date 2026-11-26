@@ -42,6 +42,10 @@ import { Card, EmptyState, EvidenceChip, ProvenanceBadge, SeverityBadge } from "
 import { EmptyState as UIEmptyState } from "@/components/ui/primitives";
 import { PreboardingChecklist } from "@/components/preboarding/Checklist";
 import { openHrItems } from "@/modules/preboarding/service";
+import { loadRequirementMatrix } from "@/modules/requirements/queries";
+import { proposedProfileSkills } from "@/modules/requirements/service";
+import { EmployeeRequirements } from "@/components/requirements/Matrix";
+import { AddProjectSkillsButton } from "@/components/requirements/Controls";
 
 export default async function EmployeeCase({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ tab?: string; preset?: string }> }) {
   const [{ id }, { tab: rawTab, preset }, session, scope] = await Promise.all([params, searchParams, getSession(), getScope()]);
@@ -137,6 +141,7 @@ export default async function EmployeeCase({ params, searchParams }: { params: P
         {tab === "history" && <HistoryTab employeeId={id} />}
         {tab === "followups" && <FollowUpsTab employeeId={id} />}
         {tab === "roadmap" && <RoadmapTab state={state} readiness={readiness} scope={scope} />}
+        {tab === "requirements" && <RequirementsTab employeeId={id} projectId={state.employee.projectId} scope={scope} />}
         {tab === "preboarding" && <PreboardingTab employeeId={id} name={state.employee.name} scope={scope} />}
       </div>
     </div>
@@ -226,6 +231,23 @@ async function RoadmapTab({ state, readiness, scope }: { state: CaseState; readi
       </Card>
       <RoadmapTimeline backbone={backbone} canDecide={(kind) => can(scope, deciderPermission(kind), { employeeId: state.employee.id })}
         extras={rows.map((r) => ({ id: r.id, type: r.type, kind: r.kind, phase: r.phase, title: r.title, description: r.description, ownerRole: r.ownerRole, completionCriteria: r.completionCriteria, relatesToKey: r.relatesToKey, rationale: r.rationale, evidenceIds: parseJson(r.evidenceIds, [] as string[]), status: r.status, origin: r.origin, decidedBy: r.decidedBy }))} />
+    </div>
+  );
+}
+
+async function RequirementsTab({ employeeId, projectId, scope }: { employeeId: string; projectId: string | null; scope: Scope }) {
+  if (!projectId) return <UIEmptyState title="No project recorded, so no onboarding requirements apply yet." />;
+  const [m, proposals] = await Promise.all([loadRequirementMatrix(projectId, scope), proposedProfileSkills(employeeId)]);
+  if (!m) return <UIEmptyState title="Onboarding requirements aren't available to you." />;
+  const canDecide = can(scope, "requirement.decide", { projectId });
+  return (
+    <div className="space-y-4">
+      {proposals.length > 0 && canDecide && can(scope, "validation.record", { employeeId }) && (
+        <Card title="Add this project's skills to the profile?" actions={<AddProjectSkillsButton employeeId={employeeId} skills={proposals.map((p) => p.skillName)} />}>
+          <p className="text-sm text-muted">Readiness on this project is validated. These skill requirements can be added to the profile as confirmed skills: {proposals.map((p) => p.skillName).join(", ")}.</p>
+        </Card>
+      )}
+      <EmployeeRequirements m={m} employeeId={employeeId} canDecide={canDecide} />
     </div>
   );
 }

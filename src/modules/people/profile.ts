@@ -10,6 +10,7 @@ export async function loadProfile(personId: string, scope: Scope, db: PrismaClie
     include: {
       assignments: { include: { project: true, reportsTo: true }, orderBy: [{ status: "asc" }, { startDate: "desc" }] },
       employee: { include: { case: { select: { phase: true, validatedStatus: true, id: true } } } },
+      skills: { include: { skill: true }, orderBy: { skill: { name: "asc" } } },
     },
   });
   if (!person) return null;
@@ -24,7 +25,13 @@ export async function loadProfile(personId: string, scope: Scope, db: PrismaClie
     }
     return null;
   };
+  const projectNames = new Map((await db.project.findMany({ select: { id: true, name: true } })).map((p) => [p.id, p.name]));
+  const catalog = await db.skill.findMany({ orderBy: [{ category: "asc" }, { name: "asc" }] });
   return {
+    skills: person.skills.map((s) => ({ id: s.id, name: s.skill.name, category: s.skill.category, level: s.level, source: s.source, status: s.status, isSample: s.isSimulated, projectName: s.projectId ? projectNames.get(s.projectId) ?? null : null, confirmedAt: s.confirmedAt })),
+    catalog: catalog.map((s) => ({ id: s.id, name: s.name, category: s.category })),
+    canClaim: can(scope, "skill.claim", { personId }),
+    canConfirm: can(scope, "skill.confirm", { personId }),
     person: { id: person.id, name: person.name, role: person.role, isSample: person.isSimulated, note: person.note },
     current: current ? { projectId: current.projectId, projectName: current.project.name, role: current.role } : null,
     lineManager: lineManager ? { id: lineManager.id, name: lineManager.name, isSample: lineManager.isSimulated } : null,

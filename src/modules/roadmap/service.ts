@@ -35,7 +35,8 @@ export async function suggestRoadmap(employeeId: string, principal: Principal, d
   for (const p of outcome.data.proposals) {
     if (p.relatesToKey && !keys.has(p.relatesToKey)) { rejected.push(`${p.title}: unknown backbone item`); continue; }
     if (p.evidenceIds.some((id) => !known.has(id))) { rejected.push(`${p.title}: cites an unknown source`); continue; }
-    if (p.type === "SKIP" && (!p.relatesToKey?.startsWith("kt:") || !p.evidenceIds.length)) { rejected.push(`${p.title}: a skip needs a KT item and supporting evidence`); continue; }
+    // Skipping redundant training comes only from requirement check-offs by CONFIRMED skills, never from the AI's guess.
+    if (p.type === "SKIP") { rejected.push(`${p.title}: skips come only from confirmed skills (requirement check-offs)`); continue; }
     if (p.type === "ADD" && items.some((i) => i.title.toLowerCase() === p.title.toLowerCase() || (p.relatesToKey === i.key && i.key.startsWith("kt:")))) { rejected.push(`${p.title}: already in the plan`); continue; }
     const related = items.find((i) => i.key === p.relatesToKey);
     if (p.type === "ALTERNATIVE" && (!related || related.status === "DONE")) { rejected.push(`${p.title}: alternatives are only proposed while a pending or blocked item is waited for`); continue; }

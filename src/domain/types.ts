@@ -96,6 +96,25 @@ export type KTItem = {
   origin: string;
   originNote: string | null;
   evidenceId: string | null;
+  /** Set when the onboarding requirement behind this activity is ticked off by a confirmed skill. */
+  coveredBySkill?: SkillCover | null;
+};
+
+/** A confirmed skill record that satisfies a requirement (the rule's evidence). */
+export type SkillCover = { recordId: string; skillName: string; level: string; evidenceId: string | null };
+
+/** One onboarding requirement as it applies to this case. */
+export type RequirementItem = {
+  id: string;
+  statusId: string;
+  title: string;
+  type: "SKILL" | "KT_ACTIVITY" | "ACCESS" | "DOCUMENT";
+  mandatory: boolean;
+  status: "TODO" | "IN_PROGRESS" | "DONE" | "SATISFIED_BY_EXISTING_SKILL" | "WAIVED";
+  skillName: string | null;
+  requiredLevel: string | null;
+  completionCriteria: string;
+  satisfiedBySkill: SkillCover | null;
 };
 
 export type EvidenceItem = {
@@ -230,4 +249,6 @@ export type CaseState = {
   validations: ValidationItem[];
   communications: CommunicationItem[];
   knowledgeResources: { id: string; title: string; location: string; copyAllowed: boolean }[];
+  /** Active onboarding requirements of the case's project (empty when none are defined). */
+  requirements?: RequirementItem[];
 };

@@ -1,11 +1,12 @@
 import Link from "next/link";
 import { UserX } from "lucide-react";
 import { formatDate } from "@/lib/clock";
-import { label, READINESS_LABEL, roleLabel } from "@/lib/labels";
+import { label, READINESS_LABEL, roleLabel, SKILL_CATEGORY_LABEL, SKILL_LEVEL_LABEL, SKILL_SOURCE_LABEL, SKILL_STATUS_LABEL } from "@/lib/labels";
+import { AddSkillDialog, SkillDecision } from "@/components/requirements/Controls";
 import { loadProfile } from "@/modules/people/profile";
 import { getScope } from "@/server/principal";
 import { PageHeader } from "@/components/ui/PageHeader";
-import { Avatar, ButtonLink, Card, DataTable, EmptyState, PersonChip, PhaseStepper, SampleTag, StatusPill } from "@/components/ui/primitives";
+import { Avatar, ButtonLink, Card, DataTable, EmptyState, PersonChip, PhaseStepper, SampleTag, StatusPill, toneFor } from "@/components/ui/primitives";
 
 export default async function ProfilePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -30,6 +31,31 @@ export default async function ProfilePage({ params }: { params: Promise<{ id: st
           {employee?.phase && <PhaseStepper phase={employee.phase} />}
         </>} />
       <div className="space-y-6">
+        <Card id="skills" title="Skills" subtitle="Only confirmed skills tick off onboarding requirements." actions={profile.canClaim ? <AddSkillDialog personId={person.id} skills={profile.catalog} /> : undefined}>
+          {profile.skills.length ? (
+            <div className="grid gap-5 md:grid-cols-2">
+              {[...new Set(profile.skills.map((s) => s.category))].map((cat) => (
+                <section key={cat}>
+                  <h3 className="mb-2 text-xs font-medium uppercase tracking-wide text-subtle">{SKILL_CATEGORY_LABEL[cat] ?? cat}</h3>
+                  <ul className="space-y-2">
+                    {profile.skills.filter((s) => s.category === cat).map((s) => (
+                      <li key={s.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-line px-3 py-2.5" data-skill={s.name} data-status={s.status}>
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium text-ink">{s.name}{s.isSample && <SampleTag className="ml-1.5" />}</p>
+                          <p className="text-xs text-subtle">{SKILL_LEVEL_LABEL[s.level]} · {SKILL_SOURCE_LABEL[s.source]}{s.projectName ? ` (${s.projectName})` : ""}</p>
+                        </div>
+                        <span className="flex items-center gap-2">
+                          <StatusPill tone={toneFor.skill(s.status)}>{SKILL_STATUS_LABEL[s.status]}</StatusPill>
+                          {profile.canConfirm && s.status === "CLAIMED" && <SkillDecision recordId={s.id} name={s.name} level={s.level} />}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              ))}
+            </div>
+          ) : <EmptyState title={mine ? "You haven't added any skills yet." : "No skills recorded yet."} action={profile.canClaim ? <AddSkillDialog personId={person.id} skills={profile.catalog} /> : undefined} />}
+        </Card>
         <Card title="Projects" subtitle="Current and earlier assignments.">
           <DataTable rows={rows} rowKey={(r) => r.id} caption="Project assignments"
             empty={<p className="text-sm text-subtle">No project assignments yet.</p>}

@@ -4,7 +4,7 @@ import { getEvaluationDate } from "@/lib/clock";
 import { parseJson } from "@/lib/json";
 import type {
   AccessItem, AccessStatus, CaseState, ClaimItem, CommunicationItem, DependencyItem, EvidenceItem, FindingItem, KTItem,
-  KTStage, PersonRef, ReadinessLevel, Severity, StageBasis, ValidationItem,
+  KTStage, PersonRef, ReadinessLevel, RequirementItem, Severity, SkillCover, StageBasis, ValidationItem,
 } from "@/domain/types";
 
 const personRef = (p: Person | null | undefined): PersonRef | null =>
@@ -37,13 +37,25 @@ export async function loadCaseState(employeeId: string, db: PrismaClient = prism
   const c = employee.case;
 
   const personIds = [employee.lineManagerId, employee.technicalLeadId, c.ktOwnerId].filter((x): x is string => Boolean(x));
-  const [people, projectPeople, projectEvidence, resources, communications] = await Promise.all([
+  const [people, projectPeople, projectEvidence, resources, communications, reqRows] = await Promise.all([
     personIds.length ? db.person.findMany({ where: { id: { in: personIds } } }) : Promise.resolve([] as Person[]),
     employee.projectId ? db.person.findMany({ where: { projectId: employee.projectId } }) : Promise.resolve([] as Person[]),
     employee.projectId ? db.evidence.findMany({ where: { projectId: employee.projectId, employeeId: null } }) : Promise.resolve([]),
     employee.projectId ? db.knowledgeResource.findMany({ where: { projectId: employee.projectId } }) : Promise.resolve([]),
     loadCommunications(db, employeeId),
+    db.employeeRequirementStatus.findMany({ where: { employeeId, requirement: { status: "ACTIVE" } }, include: { requirement: { include: { skill: true } } } }),
   ]);
+  const coverIds = reqRows.map((r) => r.satisfiedBySkillId).filter((x): x is string => Boolean(x));
+  const covers = coverIds.length ? await db.employeeSkill.findMany({ where: { id: { in: coverIds } }, include: { skill: true } }) : [];
+  const coverOf = (id: string | null): SkillCover | null => {
+    const s = id ? covers.find((c) => c.id === id) : undefined;
+    return s ? { recordId: s.id, skillName: s.skill.name, level: s.level, evidenceId: s.evidenceId } : null;
+  };
+  const requirements: RequirementItem[] = reqRows.map((r) => ({
+    id: r.requirementId, statusId: r.id, title: r.requirement.title, type: r.requirement.type as RequirementItem["type"], mandatory: r.requirement.mandatory,
+    status: r.status as RequirementItem["status"], skillName: r.requirement.skill?.name ?? null, requiredLevel: r.requirement.requiredLevel,
+    completionCriteria: r.requirement.completionCriteria, satisfiedBySkill: r.status === "SATISFIED_BY_EXISTING_SKILL" ? coverOf(r.satisfiedBySkillId) : null,
+  }));
   const byId = new Map(people.map((p) => [p.id, p]));
 
   const access: AccessItem[] = employee.access.map((a) => ({
@@ -56,6 +68,7 @@ export async function loadCaseState(employeeId: string, db: PrismaClient = prism
     id: k.id, title: k.title, description: k.description, scopeType: k.scopeType === "COMPLEX" ? "COMPLEX" : "CORE", stage: k.stage as KTStage,
     stageBasis: k.stageBasis as StageBasis, owner: k.owner, required: k.requiredForReady, requiredApps: parseJson(k.requiredApps, [] as string[]),
     status: k.status as KTItem["status"], origin: k.origin, originNote: k.originNote, evidenceId: k.evidenceId,
+    coveredBySkill: k.requirementId ? requirements.find((r) => r.id === k.requirementId)?.satisfiedBySkill ?? null : null,
   }));
   const evidence = employee.evidence.map(toEvidenceItem);
   const claims: ClaimItem[] = employee.evidence.flatMap((e) => e.claims.map((cl) => ({
@@ -99,6 +112,7 @@ export async function loadCaseState(employeeId: string, db: PrismaClient = prism
     projectEvidence: projectEvidence.map(toEvidenceItem),
     claims, findings, dependencies, validations, communications,
     knowledgeResources: resources.map((r) => ({ id: r.id, title: r.title, location: r.location, copyAllowed: r.copyAllowed })),
+    requirements,
   };
 }
 

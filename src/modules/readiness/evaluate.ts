@@ -35,7 +35,8 @@ export const LEVEL_RANK: Record<ReadinessLevel, number> = {
 function assessLevel(state: CaseState, gates: Gate[], graph: GraphResult): { level: ReadinessLevel; reasons: string[] } {
   if (gates.every((g) => g.status === "SATISFIED")) return { level: "INDEPENDENTLY_READY", reasons: ["Every readiness gate is satisfied, including technical-owner validation."] };
 
-  const agreed = state.kt.filter((k) => k.status === "CONFIRMED" && k.required);
+  // KT already covered by a confirmed skill is not part of the learning path, so it does not drive the level.
+  const agreed = state.kt.filter((k) => k.status === "CONFIRMED" && k.required && !k.coveredBySkill);
   // Assessment results never move a KT stage; stages backed only by an assessment are ignored here.
   const staged = agreed.filter((k) => k.stageBasis !== "ASSESSMENT");
   const progressed = staged.filter((k) => k.stage !== "NOT_STARTED");

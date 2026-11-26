@@ -38,6 +38,7 @@ model Person {
   user        User?
   assignments ProjectAssignment[] @relation("AssignmentPerson")
   reports     ProjectAssignment[] @relation("AssignmentReportsTo")
+  skills      EmployeeSkill[]
 }
 
 // The onboarding-case anchor. Each employee is a Person (personId) with a profile; `name` keeps the tracker's verbatim name.
@@ -65,6 +66,7 @@ model Employee {
   actions         ActionItem[]
   assessments     ReadinessAssessment[]
   preboarding     PreboardingItem[]
+  requirementStatuses EmployeeRequirementStatus[]
   user            User?
 }
 
@@ -107,6 +109,81 @@ model Project {
   resources   KnowledgeResource[]
   people      Person[]
   assignments ProjectAssignment[]
+  requirements OnboardingRequirement[]
+}
+
+// Skill catalogue. category: APPLICATION | TECHNICAL | DOMAIN | PROCESS
+model Skill {
+  id             String                  @id
+  name           String                  @unique
+  category       String
+  description    String                  @default("")
+  employeeSkills EmployeeSkill[]
+  requirements   OnboardingRequirement[]
+}
+
+// A skill on a person's profile. Only CONFIRMED skills count for automatic requirement check-off; a self-declared skill
+// stays CLAIMED until a Technical Lead confirms it. level: BASIC | INTERMEDIATE | ADVANCED
+// source: SELF_DECLARED | TL_CONFIRMED | PREVIOUS_PROJECT | ASSESSMENT; status: CLAIMED | CONFIRMED | REJECTED
+model EmployeeSkill {
+  id            String  @id @default(cuid())
+  personId      String
+  person        Person  @relation(fields: [personId], references: [id])
+  skillId       String
+  skill         Skill   @relation(fields: [skillId], references: [id])
+  level         String
+  source        String
+  status        String  @default("CLAIMED")
+  projectId     String?
+  evidenceId    String?
+  confirmedById String?
+  confirmedAt   String?
+  note          String?
+  isSimulated   Boolean @default(false)
+  createdAt     String
+  updatedAt     String?
+
+  @@unique([personId, skillId])
+}
+
+// What employees need for onboarding on a project, defined by the project's Technical Lead.
+// type: SKILL | KT_ACTIVITY | ACCESS | DOCUMENT; status: ACTIVE | RETIRED
+model OnboardingRequirement {
+  id                 String                      @id @default(cuid())
+  projectId          String
+  project            Project                     @relation(fields: [projectId], references: [id])
+  title              String
+  description        String                      @default("")
+  type               String
+  skillId            String?
+  skill              Skill?                      @relation(fields: [skillId], references: [id])
+  requiredLevel      String?
+  completionCriteria String
+  mandatory          Boolean                     @default(true)
+  status             String                      @default("ACTIVE")
+  createdById        String
+  createdAt          String
+  updatedAt          String?
+  statuses           EmployeeRequirementStatus[]
+}
+
+// One employee's progress on one requirement. SATISFIED_BY_EXISTING_SKILL is set only by the deterministic check-off rule
+// (src/modules/requirements/checkoff.ts) and can be undone by the Technical Lead with a reason (checkoffUndone).
+// status: TODO | IN_PROGRESS | DONE | SATISFIED_BY_EXISTING_SKILL | WAIVED
+model EmployeeRequirementStatus {
+  id                 String                @id @default(cuid())
+  employeeId         String
+  employee           Employee              @relation(fields: [employeeId], references: [id])
+  requirementId      String
+  requirement        OnboardingRequirement @relation(fields: [requirementId], references: [id])
+  status             String                @default("TODO")
+  satisfiedBySkillId String?
+  checkoffUndone     Boolean               @default(false)
+  decidedById        String?
+  decidedAt          String?
+  note               String?
+
+  @@unique([employeeId, requirementId])
 }
 
 // A person's role on a project. Never hard-deleted: removal sets status REMOVED (or COMPLETED) with an end date, and is audited.
@@ -188,6 +265,7 @@ model AccessRequest {
   usableEvidenceId  String?
   lastUpdate        String?
   nextFollowUp      String?
+  requirementId     String?
   updatedAt         DateTime @default(now()) @updatedAt
 }
 
@@ -211,6 +289,7 @@ model KTActivity {
   validation       String   @default("PENDING")
   requiredForReady Boolean  @default(true)
   requiredApps     String   @default("[]")
+  requirementId    String?
   status           String   @default("CONFIRMED")
   origin           String   @default("EVIDENCE")
   originNote       String?

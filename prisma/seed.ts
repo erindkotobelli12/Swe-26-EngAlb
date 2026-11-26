@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import { PrismaClient } from "@prisma/client";
 import { ACCESS, CASES, CLAIMS, EVIDENCE, KT, PROJECTS, ROLE_ONLY_PEOPLE, lineManagerId, trackerContent } from "./seed-data/official";
 import {
-  DEMO_USERS, SAMPLE_AM_BY_PROJECT, SAMPLE_NOTE, SAMPLE_PAST_ASSIGNMENTS, SAMPLE_PEOPLE, SAMPLE_PROJECTS, SAMPLE_TL_BY_PROJECT, employeePersonId, resolvePerson,
+  DEMO_USERS, SAMPLE_AM_BY_PROJECT, SAMPLE_NOTE, SAMPLE_PAST_ASSIGNMENTS, SAMPLE_PEOPLE, SAMPLE_PROJECTS, SAMPLE_SKILLS, SAMPLE_TL_BY_PROJECT, SKILLS, employeePersonId, resolvePerson,
 } from "./seed-data/sample";
 
 if (existsSync(".env")) process.loadEnvFile(".env");
@@ -40,6 +40,10 @@ async function main() {
     await prisma.accessRequest.deleteMany();
     await prisma.kTActivity.deleteMany();
     await prisma.preboardingItem.deleteMany();
+    await prisma.employeeRequirementStatus.deleteMany();
+    await prisma.onboardingRequirement.deleteMany();
+    await prisma.employeeSkill.deleteMany();
+    await prisma.skill.deleteMany();
     await prisma.user.deleteMany();
     await prisma.onboardingCase.deleteMany();
     await prisma.employee.deleteMany();
@@ -116,6 +120,17 @@ async function main() {
     }
     await prisma.projectAssignment.createMany({
       data: assignments.map((a) => ({ ...a, reportsToPersonId: a.reportsToPersonId ?? null, startDate: a.startDate ?? null, endDate: a.endDate ?? null, status: a.status ?? "ACTIVE", movement: a.movement ?? null, assignedById: SEEDER, assignedAt: SEED_AT })),
+    });
+
+    // Sample skills (none come from the starter pack). Confirmed ones were confirmed by the sample project's Technical Lead.
+    await prisma.skill.createMany({ data: SKILLS.map((s) => ({ ...s })) });
+    const confirmerOf = (projectId: string | null) => (projectId === "LUMEN" ? "P-S-IVA" : projectId === "CIRRUS" ? "P-S-TL-BEN" : null);
+    await prisma.employeeSkill.createMany({
+      data: SAMPLE_SKILLS.map((s) => ({
+        personId: resolvePerson(s.person), skillId: s.skillId, level: s.level, source: s.source, status: s.status, projectId: s.projectId, isSimulated: true,
+        confirmedById: s.status === "CONFIRMED" ? confirmerOf(s.projectId) : null, confirmedAt: s.status === "CONFIRMED" ? "2026-09-30T00:00:00.000Z" : null,
+        note: SAMPLE_NOTE.replace("person", "skill record"), createdAt: SEED_AT,
+      })),
     });
 
     await prisma.user.createMany({

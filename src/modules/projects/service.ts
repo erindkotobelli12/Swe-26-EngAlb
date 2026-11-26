@@ -8,6 +8,7 @@ import { DecisionError } from "@/modules/detective/decisions";
 import { assertAllowed, type Principal } from "@/modules/permissions";
 import { changePhase } from "@/modules/phase/transition";
 import { createDefaultChecklist } from "@/modules/preboarding/service";
+import { syncRequirements } from "@/modules/requirements/service";
 
 /**
  * Project and assignment management. Only humans call this (PMO for projects and people, the project's Additional
@@ -111,6 +112,8 @@ async function assignEmployee(db: PrismaClient, project: { id: string; name: str
     details: `${person.name} assigned to ${project.name} as an employee (${movement.toLowerCase()}), reporting to ${lm.name}. Onboarding case opened in pre-boarding.`,
   }, db);
   await recomputeCase(employeeId, `assigned to ${project.name}`, actor, db);
+  // The project's onboarding requirements apply at once, including automatic check-off by confirmed skills.
+  await syncRequirements(db, { projectId: project.id, actor, trigger: `${person.name} assigned to ${project.name}`, personIds: [person.id] });
   return employeeId;
 }
 
