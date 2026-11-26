@@ -189,7 +189,7 @@ async function EvidenceTab({ employeeId, scope }: { employeeId: string; scope: S
       {cards.map((e) => (
         <EvidenceCard key={e.id} e={e}
           controls={e.sourceType !== "TRACKER" && (canReview || canRunAI) ? <EvidenceTools evidenceId={e.id} reviewStatus={e.reviewStatus} canRunAI={canRunAI} canReview={canReview} fields={fields} /> : undefined}
-          claimControls={canReview ? (claimId) => <ClaimReview claimId={claimId} value={e.claims.find((c) => c.id === claimId)?.value ?? ""} /> : undefined}
+          claimControls={canReview ? (claimId) => <ClaimReview claimId={claimId} value={e.claims.find((c) => c.id === claimId)?.value ?? ""} reviewed={e.claims.find((c) => c.id === claimId)?.reviewStatus !== "PENDING"} /> : undefined}
         />
       ))}
       {project.length > 0 && <><h2 className="pt-2 font-semibold">Project-level evidence</h2>{project.map((e) => <EvidenceCard key={e.id} e={e} />)}</>}

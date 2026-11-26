@@ -16,7 +16,8 @@ export function PipelineSteps({ steps }: { steps: PipelineStep[] }) {
   );
 }
 
-export function ClaimReview({ claimId, value }: { claimId: string; value: string }) {
+/** Review controls for one claim. Stays mounted after the decision so the pipeline steps remain visible. */
+export function ClaimReview({ claimId, value, reviewed = false }: { claimId: string; value: string; reviewed?: boolean }) {
   const router = useRouter();
   const [pending, start] = useTransition();
   const [mode, setMode] = useState<"idle" | "edit" | "reject">("idle");
@@ -36,6 +37,7 @@ export function ClaimReview({ claimId, value }: { claimId: string; value: string
   }
 
   if (steps) return <PipelineSteps steps={steps} />;
+  if (reviewed) return null;
   return (
     <div className="mt-2 space-y-2">
       {mode === "edit" && <input aria-label="Edited value" value={edited} onChange={(e) => setEdited(e.target.value)} className="w-full rounded border px-2 py-1 text-sm" />}

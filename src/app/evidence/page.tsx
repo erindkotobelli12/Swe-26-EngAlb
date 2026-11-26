@@ -48,7 +48,7 @@ export default async function EvidencePage({ searchParams }: { searchParams: Pro
         {pending.length ? pending.map((e) => (
           <EvidenceCard key={e.id} e={e}
             controls={(canReviewOf(e.id) || canRunAIOf(e.id)) ? <EvidenceTools evidenceId={e.id} reviewStatus={e.reviewStatus} canRunAI={canRunAIOf(e.id) && Boolean(e.employeeName)} canReview={canReviewOf(e.id)} fields={suggestions.get(e.id) ?? []} /> : undefined}
-            claimControls={canReviewOf(e.id) ? (claimId) => <ClaimReview claimId={claimId} value={e.claims.find((c) => c.id === claimId)?.value ?? ""} /> : undefined}
+            claimControls={canReviewOf(e.id) ? (claimId) => <ClaimReview claimId={claimId} value={e.claims.find((c) => c.id === claimId)?.value ?? ""} reviewed={e.claims.find((c) => c.id === claimId)?.reviewStatus !== "PENDING"} /> : undefined}
           />
         )) : <EmptyState title="Nothing waiting for review">New evidence and AI-proposed claims appear here.</EmptyState>}
       </div>

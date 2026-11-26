@@ -31,15 +31,33 @@ flowchart LR
   RC --> GRAPH[Dependency propagation]
   RC --> REL[Reliability classifier]
   FND --> DA[Detective Agent] -->|reviews + PROPOSED findings| HR2{Human: accept / resolve / dismiss}
-  STATE --> DSA[Dependency Suggestion Agent] -->|PROPOSED edges| HR3{TL / PMO confirm}
+  STATE --> DSA[Dependency Suggestion Agent] -->|PROPOSED edges| HR3{Phase owner confirms}
   HR3 --> GRAPH
   GRAPH --> SIM[Simulator: evaluateReadiness on a clone] --> SXA[Simulator Explanation Agent]
-  FND --> FU[Follow-up engine] --> FDA[Follow-Up Drafting Agent] -->|draft| HR4{PMO edit / approve / send simulated}
+  FND --> FU[Follow-up engine] --> FDA[Follow-Up Drafting Agent] -->|draft| HR4{Phase owner or Line Manager: edit / approve / send simulated}
   HR4 -->|response| EV
   FND --> BS[Briefing selection] --> BA[Briefing Agent] -->|referenced statements only| BR[(Briefing)]
   STATE --> AS[Assistant]
   TL{Technical Lead} -->|only path| VAL[(ReadinessValidation)] --> GATES
 ```
+
+## Who approves each agent's output (organisation model)
+
+Approvals moved from the PMO to the owner of the case's current phase. The PMO keeps portfolio oversight and improvements; it no longer approves day-to-day output.
+
+| Agent | Output | Approved by |
+|---|---|---|
+| Onboarding Detective | Proposed findings, reviews | Phase owner (HR in pre-boarding, the project's Technical Lead in onboarding). The Line Manager may also decide non-technical findings about their own employees. |
+| Dependency Suggestion | Proposed edges | Phase owner |
+| Evidence Extraction | Proposed claims | Phase owner; KT/technical claims always the Technical Lead |
+| Follow-Up Drafting | Rewritten drafts | Phase owner or the employee's Line Manager, for every employee the message covers; sending is simulated |
+| Briefing | Narrative wording | No approval (wording only; every statement keeps its references); generated per role and scope |
+| Simulator Explanation | Narrative | None (read-only explanation of a deterministic diff) |
+| Roadmap | Proposed plan items | Technical items: the case's Technical Lead. Logistics/ownership: phase owner or Line Manager. **Skips are no longer accepted from the AI** — training is skipped only when a confirmed skill ticks off a requirement. |
+| Bottleneck Insight | Hypotheses and recommendations | The PMO may turn a recommendation into an improvement (pre-filled form; the PMO saves and approves) |
+| Assistant | Answers | None (read-only, limited to the user's scope) |
+
+AI never changes phase, skills, requirements, assignments or improvements; those are written only by human-triggered server modules.
 
 ---
 
@@ -69,7 +87,7 @@ flowchart LR
 | **Prompt** | `src/ai/prompts/dependencies.ts`, `dependencies@2026-11-26.1`. |
 | **Guards after** | Both node keys must exist and differ. The excerpt must be verbatim in the cited source. The edge must not already exist (including previously rejected ones). It must not create a cycle. Accepted edges are stored as `Dependency` rows with status **PROPOSED**, origin **AI**, plus rationale and excerpt. |
 | **Limitations** | It can only connect nodes that already exist; it cannot create KT activities. With sparse evidence it usually returns nothing, which is correct behaviour. |
-| **Human validation** | A Technical Lead or PMO confirms or rejects (reason required). Only CONFIRMED edges propagate. Confirming *KT → independent execution* also agrees that KT activity as part of the readiness scope. |
+| **Human validation** | The phase owner (usually the Technical Lead) confirms or rejects (reason required). Only CONFIRMED edges propagate. Confirming *KT → independent execution* also agrees that KT activity as part of the readiness scope. |
 | **Interactions** | Feeds the **dependency engine**, the **simulator** and therefore the **assessed level** (BLOCKED when a confirmed access → KT edge blocks all progress). |
 
 ## 3. Evidence Extraction Agent
@@ -90,14 +108,14 @@ flowchart LR
 
 | | |
 |---|---|
-| **Responsibility** | Rewrite one consolidated follow-up (one stakeholder, one channel) into a concise, personalised email or Teams message from the PMO. |
+| **Responsibility** | Rewrite one consolidated follow-up (one stakeholder, one channel) into a concise, personalised email or Teams message from the person who approves it. |
 | **Trigger** | **Personalise with AI** on a DRAFT in the Follow-Up Center. Every draft starts as a deterministic template labelled "template (no AI)". |
 | **Inputs** | Channel, recipient label, greeting, allowed names (the employees in the items, plus the recipient if named), and the items: employee, title, ask, days open, ≤2 verbatim quotes each. `src/modules/followups/service.ts`. |
 | **Output schema** | `DraftSchema` in `src/ai/prompts/followup.ts`: `{subject, body}`. |
 | **Prompt** | `src/ai/prompts/followup.ts`, `followup-drafting@2026-11-26.1`. It forbids naming anyone else, inventing dates or deadlines, or promising outcomes. |
 | **Guards after** | The draft is discarded (template kept) if it names any person or employee from the database outside the allowed set. A warning appears if an employee in the items is not mentioned. |
 | **Limitations** | It cannot verify free-text promises. Human approval is the control for those. |
-| **Human validation** | PMO only: edit (resets approval), approve, then **Send (simulated)**. Sending only writes to a simulated outbox and stores the message as simulated request evidence. Nothing leaves the machine. |
+| **Human validation** | The phase owner or the employee's Line Manager: edit (resets approval), approve, then **Send (simulated)**. Sending only writes to a simulated outbox and stores the message as simulated request evidence. Nothing leaves the machine. |
 | **Interactions** | Items come from the deterministic **follow-up engine**. Recorded responses enter the **evidence pipeline**. A RESPONDED communication answers its tracked requests in the **unanswered-request detector**. |
 
 ## 5. Briefing Agent
@@ -105,7 +123,7 @@ flowchart LR
 | | |
 |---|---|
 | **Responsibility** | Turn the deterministic, role-specific fact list into readable briefing bullets. |
-| **Trigger** | **Generate briefing** on `/briefing` for PMO, Technical Lead, Management or Line Manager. |
+| **Trigger** | **Generate briefing** on `/briefing` for each role the user holds: PMO, Additional Manager, Line Manager, Technical Lead or HR (pre-boarding pipeline and start dates at risk), limited to the user's scope or one project. |
 | **Inputs** | The sections selected by `src/modules/briefing/select.ts`. Each statement carries typed refs (`finding:`, `evidence:`, `action:`). |
 | **Output schema** | `BriefingSchema` in `src/ai/prompts/briefing.ts`: `sections[] {key, statements[] {text, refs[] (≥1)}}`. |
 | **Prompt** | `src/ai/prompts/briefing.ts`, `briefing@2026-11-26.1`. It may merge, shorten and order statements, but never add facts. |
@@ -135,8 +153,8 @@ flowchart LR
 | **Output schema** | `RoadmapSchema` in `src/ai/prompts/roadmap.ts`: `proposals[] {type (ALTERNATIVE / ADD / SKIP), kind, phase, title, description, ownerRole, completionCriteria, relatesToKey, rationale, evidenceIds}`. |
 | **Prompt** | `src/ai/prompts/roadmap.ts`, `roadmap@2026-11-26.1`. |
 | **Guards after** | `relatesToKey` must be a backbone key and cited sources must exist. A SKIP needs a KT item and supporting evidence. An ALTERNATIVE must relate to an item that is not done. An ADD must not duplicate a plan item. Duplicates are refused. Survivors are stored as `RoadmapItem` with status **PROPOSED**. |
-| **Human validation** | KT, alternative and skip items: **Technical Lead**. Logistics and ownership items: **PMO**. Approving an ADD of kind KT creates an agreed KT requirement (feeds gates and the map). Approving a SKIP rejects that KT requirement. Alternatives are plan items only. |
-| **Interactions** | The backbone is derived from gates and the dependency graph, so an approved state change adapts it automatically. Step 7 of the evidence pipeline and the "changes since the last approved version" panel show the diff against the baseline a TL or PMO approved. Nothing changes silently. |
+| **Human validation** | KT and alternative items: the case's **Technical Lead**. Logistics and ownership items: the phase owner or the Line Manager. Approving an ADD of kind KT creates an agreed KT requirement (feeds gates and the map). AI SKIP proposals are rejected by the server: skipping comes only from requirement check-offs by confirmed skills. Alternatives are plan items only. |
+| **Interactions** | The backbone is derived from gates and the dependency graph, so an approved state change adapts it automatically. Step 7 of the evidence pipeline and the "changes since the last approved version" panel show the diff against the baseline the Technical Lead or Line Manager approved. Nothing changes silently. |
 
 ## 8. Bottleneck Insight Agent
 
@@ -175,7 +193,7 @@ flowchart LR
 | **Dependency propagation** | `src/modules/dependencies/graph.ts` | Structural RULE edges (access → `ACCESS_USABLE`, agreed KT → `EXECUTION_OBSERVED`, `EXECUTION_OBSERVED` → `TECH_VALIDATION_APPROVED`, every gate → Readiness, blocker finding → its gate) plus stored TEMPLATE / AI / HUMAN edges. A node is BLOCKED when unsatisfied with an unsatisfied **confirmed** upstream. Downstream impact is the reachable unsatisfied nodes. The minimal prerequisite set is the unsatisfied confirmed ancestors of Readiness. Recommended order is Kahn's topological order, ties broken by downstream impact. **AND-only assumption.** |
 | **Simulator** | `src/modules/simulator/*.ts` | Overrides apply to `structuredClone(state)`, then exactly `evaluateReadiness` runs. Toggles are generated from the case's unsatisfied items. A test asserts the database is unchanged. |
 | **Reliability** | `src/modules/reliability/classify.ts` | Precedence: Conflicting → Insufficient evidence → Outdated → Unverified → Verified → Well-supported. Uses the source authority matrix (`src/domain/authority.ts`), recency and human verification. Always returns reasons and source IDs. Requests never support a status. |
-| **Follow-up engine** | `src/modules/followups/candidates.ts` | Routing: access items go to the request handler, with an approval also sent to the approver. Findings route by type (TL for technical, LM for logistics/status, request recipient for unanswered requests). Unresolvable owners go to the PMO as "identify owner". One group per stakeholder. Reminder at `REMINDER_AFTER_DAYS`; escalation **recommended** at `ESCALATE_AFTER_DAYS`. Priority = impact×5 + severity points + overdue days×2 + escalation level×10, with the breakdown shown. |
+| **Follow-up engine** | `src/modules/followups/candidates.ts` | Routing: access items go to the request handler, with an approval also sent to the approver. Findings route by type (TL for technical, LM for logistics/status, request recipient for unanswered requests). Unresolvable owners go to the PMO as "identify owner" (the PMO assigns people). One group per stakeholder; a user drafts only for employees they may act on. Reminder at `REMINDER_AFTER_DAYS`; escalation **recommended** at `ESCALATE_AFTER_DAYS`, up the hierarchy (Line Manager → Additional Manager → PMO; anyone else → the employee's Line Manager). Priority = impact×5 + severity points + overdue days×2 + escalation level×10, with the breakdown shown. |
 | **Briefing selection** | `src/modules/briefing/select.ts` | Role → sections, each statement with refs. Diff against the previous briefing's snapshot. |
 | **Roadmap backbone** | `src/modules/roadmap/backbone.ts` | Three phases (prerequisites → KT → readiness). Items come from scope, owners, each required access item, each KT activity, the readiness date, observed execution and validation. Status (done / in progress / blocked / to do / unknown) and "waits for" come from the gates and the dependency graph. `diffBackbone` compares the plan with the approved baseline. |
 | **Organisational aggregations** | `src/modules/insights/aggregate.ts` | Counts over official cases, each keeping the case IDs it counts. Historical metrics (time to usable access, time to validated readiness, human blocker-resolution time) are computed only where both timestamps exist, and withheld as "Insufficient data (n = X)" below `MIN_SAMPLE_SIZE` (5). Simulated history (`SIM-0xx`) is a separate, labelled dataset shown only behind a toggle. |

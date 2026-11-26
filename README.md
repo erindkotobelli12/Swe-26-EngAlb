@@ -72,20 +72,24 @@ The e2e global setup re-seeds the dev database, because the journey changes data
 
 ## Feature tour
 
-| Area | What it does |
-|---|---|
-| **Dashboard** | Data-driven KPIs, top issue per case, AI activity. |
-| **Case hub** `/employees/[id]` | **Overview**: reported / assessed / validated readiness, reliability, 10 gates, §6 checklist, access, KT, stakeholders, TL validation.<br>**Investigation**: rule findings and AI Detective proposals, side-by-side conflicts.<br>**Dependency map** (React Flow).<br>**Simulator**.<br>**Roadmap**: deterministic three-phase plan, AI adjustments for approval, approved baseline with diff.<br>**Evidence & reliability**: verbatim sources, claims and review.<br>**Follow-ups**.<br>**History**: audit trail. |
-| **Investigations** | Cross-case findings queue; "Investigate all open cases". |
-| **Follow-Up Center** | One consolidated message per stakeholder; escalation recommendations; edit → approve → send (simulated) → record response. |
-| **Briefing** | Role-specific daily briefing (PMO, Technical Lead, Management, Line Manager); every statement referenced; Markdown or print export. |
-| **Insights** | Organisation-wide bottlenecks (applications not usable, where access waits, findings by project/category, missing responsibilities); AI root-cause hypotheses citing the figures; historical metrics withheld below n = 5; optional, clearly labelled simulated history. |
-| **Evidence inbox** | Add evidence verbatim, extract claims with AI or by hand, approve/edit/reject, live 9-step pipeline result. |
-| **My workspace** | Employee view (Mila, Leo): own journey; confirm own successful login. |
-| **Assistant** | Questions over the records, with verified citations. |
-| **AI activity** | Every model call: agent, model, prompt version, input IDs, output, status. |
+Each role has its own home page and short navigation (`/` sends you there):
 
-Switch demo users in the sidebar (not production authentication).
+| Role | Home | Also |
+|---|---|---|
+| **PMO** | **Portfolio**: project health with reasons, portfolio briefing, top bottlenecks → improvements | Projects (create/edit wizard, team tree, requirements, pre-boarding, briefing), Briefing, Insights & improvements, Audit & AI log |
+| **Additional Manager** | **My projects**: projects, Line Managers with team size / blocked / overdue, Technical Lead gaps, own improvements | Team, Escalations, Briefing; chooses each project's Technical Lead |
+| **Line Manager** | **My team**: people grouped by phase with blocker and next step; pre-boarding items | Pre-boarding (hand-over), Follow-ups, Briefing |
+| **Technical Lead** | **Onboarding**: readiness, reliability, requirement progress, sign-offs, findings, skills to confirm | Requirements (editor + matrix with automatic skill check-off), Investigations, Evidence, Follow-ups, Briefing, Audit & AI log |
+| **HR** | **Pre-boarding**: everyone not yet started, checklist progress, start dates, missing contacts | Follow-ups, Briefing |
+| **Employee** | **My onboarding**: phase, next steps, waiting on, contacts, requirements, access (Confirm it works) | My profile (skills and earlier projects), Knowledge, Assistant |
+
+The **case hub** `/employees/[id]` keeps every earlier feature: overview (reported / assessed / validated readiness, gates as plain sentences, access, KT, technical validation), requirements, pre-boarding, findings (facts vs assumptions in a details drawer), dependency map, simulator, roadmap, evidence and reliability, follow-ups and history. Tabs and actions follow the permissions in `docs/SPECIFICATION.md`.
+
+### Demo mode
+
+Accounts are switched from the account menu (top right → **Switch demo account**, grouped by role). A small **Demo** tag is the only sign that demo mode is on; there is no password because this is not production authentication (an HTTP-only cookie selects a seeded account). Data is "as of 14 Oct 2026" (`DEMO_EVALUATION_DATE`), shown once in the account menu. People, projects, skills and histories that are not in the starter pack are **sample data** and carry a "Sample data" tag (see `docs/ASSUMPTIONS.md`).
+
+End-to-end tests run against any running server: `E2E_BASE_URL=http://localhost:3100 npm run test:e2e -- --grep-invert @llm` (default: the dev server on port 3000).
 
 ## Documentation
 

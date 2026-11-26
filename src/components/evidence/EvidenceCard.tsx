@@ -48,7 +48,7 @@ export default function EvidenceCard({ e, controls, claimControls }: { e: Eviden
                   </div>
                   <p className="mt-1 text-xs italic text-muted">“{c.excerpt}” <span className="not-italic text-emerald-700">✓ verbatim</span></p>
                   {c.reviewReason && <p className="mt-1 text-xs text-subtle">Review note: {c.reviewReason}</p>}
-                  {c.reviewStatus === "PENDING" && claimControls?.(c.id)}
+                  {claimControls?.(c.id)}
                 </div>
               ))}
             </div>

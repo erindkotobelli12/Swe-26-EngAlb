@@ -53,6 +53,29 @@
 - **Channels**: named people get a Teams message; role mailboxes get email.
 - **Priority score** = downstream impact × 5 + severity points (40/25/10/5) + days beyond the follow-up threshold × 2 + escalation level × 10.
 
+## Organisation model (to confirm with the Business Owner)
+
+1. "Manager" in the starter-pack case table means the **Line Manager**.
+2. Pre-boarding ends when HR's items are complete **and** the Line Manager confirms the hand-over.
+3. The Line Manager can update pre-boarding items for their own employees, alongside HR.
+4. An automatic skill check-off needs a **confirmed** skill at the required level or higher. Self-declared skills need a Technical Lead to confirm them.
+5. A skill check-off counts toward the KT gates, but **never** replaces technical validation.
+6. The PMO's view is project-level and read-only for cases. Day-to-day decisions belong to the phase owner (HR in pre-boarding, the Technical Lead in onboarding); the Line Manager may decide non-technical findings about their own employees.
+7. Escalations go Line Manager → Additional Manager → PMO.
+8. The former "Management" role is now the Additional Manager. The PMO covers portfolio-level reporting.
+
+Further choices made while building it:
+
+- **Sample people and data.** The starter pack names no Additional Manager, HR person or Technical Lead (Orion's exists only as a role). Sample people (Petra Lind – PMO, Marco Ruiz and Elena Sato – Additional Managers, Ben Okafor – Technical Lead, Iva Duka – Line Manager and Technical Lead, Hana Ilic – HR, Rina Kola and Dren Leka – available for assignment), two sample projects (Lumen, Cirrus), skills and earlier-project histories are created in `prisma/seed-data/sample.ts`, marked `isSimulated` and tagged "Sample data" in the UI.
+- **Sample data never changes starter-pack facts.** Sample Technical Lead assignments on official projects are not copied onto the official cases, so the readiness gates (e.g. "Technical Lead not recorded" for Leo) stay exactly as derived from the pack. A Technical Lead chosen in the app (a real action) is copied onto the cases of that project.
+- **Phase of the official cases.** Noah ("Pre-Onboarding") starts in pre-boarding; the other nine in onboarding. Noah's checklist marks only what the tracker shows (start date and movement; Line Manager named) and leaves the rest To do.
+- **Default pre-boarding checklist.** Four items come from the starter-pack §6 checklist; contract/paperwork, welcome message and equipment are common practice. Due dates are targets relative to the start date.
+- **Requirement types.** Skill and document requirements are tracked as requirement status; knowledge-transfer requirements create KT activities and access requirements create access requests. A mandatory skill requirement counts toward the KT gates.
+- **Movement** of a new assignment (new hire / reallocation) is derived from whether the person has an earlier completed assignment and can be overridden in the wizard.
+- **Technical Lead candidates** are the project's Line Managers and people whose role is Technical Lead.
+- **Project health thresholds**: critical at 1 open critical finding; at risk at 1 high finding, 1 access item not working, 1 overdue follow-up, 1 stale case, 2 pending sign-offs, or a missing Additional Manager / Line Manager / Technical Lead (all in `src/config/thresholds.ts`, overridable by environment variable).
+- **One onboarding case per person.** A person whose case is closed is reopened in pre-boarding when reassigned.
+
 ## Interpretations of the starter-pack data
 
 - The tracker "Manager" column is treated as the **Line Manager**.
@@ -72,13 +95,12 @@
 
 1. Does the Technical Lead's weekly classification (e.g. EMAIL-003 "Ready with Support") count as technical validation, or must a formal validation record exist?
 2. What are the correct stale and follow-up thresholds (we assume 7 and 3 days)?
-3. What is the escalation chain, and after how long (we assume a reminder after 3 days, an escalation recommendation to the Line Manager / Technical Manager after 7)?
+3. Are the escalation timings right (we assume a reminder after 3 days and an escalation recommendation, up the hierarchy, after 7)?
 4. Who may close onboarding? Can a Line Manager declare closure (EMAIL-004) without technical validation?
 5. Which applications are required per project and role? (Only Leo's and Iris's are known.)
-6. Is the tracker "Manager" the Line Manager?
-7. Are Nova VPN and Orion Portal related to the Nova and Orion projects?
-8. Who owns Helix Service Desk provisioning?
-9. Is "can handle standard requests with occasional support" independent execution of the standard scope?
-10. Are "production changes" part of Owen's core scope or an exception?
-11. Who is Lina's Technical Manager and KT owner, and what are her project and exact role?
-12. May the Atlas KT owner's runbook be summarised for assessments, or only referenced?
+6. Are Nova VPN and Orion Portal related to the Nova and Orion projects?
+7. Who owns Helix Service Desk provisioning?
+8. Is "can handle standard requests with occasional support" independent execution of the standard scope?
+9. Are "production changes" part of Owen's core scope or an exception?
+10. Who is Lina's Technical Manager and KT owner, and what are her project and exact role?
+11. May the Atlas KT owner's runbook be summarised for assessments, or only referenced?
