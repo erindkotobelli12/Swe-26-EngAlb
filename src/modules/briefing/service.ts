@@ -46,12 +46,13 @@ export function validateStatements(statements: Statement[], allowedRefs: Set<str
 export async function generateBriefing(role: BriefingRole, principal: Principal, db: PrismaClient = prisma, opts: { projectId?: string | null } = {}): Promise<string> {
   const scope = await assertAllowed(principal, "briefing.generate", {}, db);
   if (!briefingRolesFor(scope).includes(role)) throw new DecisionError("You can only generate the briefing for a role you hold.");
+  if (opts.projectId) await assertAllowed(principal, "project.view", { projectId: opts.projectId }, db);
   const keep = inScope(scope, role, opts.projectId);
   const [allCases, queue, actions, previousRow] = await Promise.all([
     loadPortfolio(db),
     loadFollowUpQueue(db, scope),
     db.actionItem.findMany({ where: { status: { in: ["OPEN", "IN_PROGRESS"] } }, include: { employee: true } }),
-    db.briefing.findFirst({ where: { role }, orderBy: { generatedAt: "desc" } }),
+    db.briefing.findFirst({ where: { role, scopeKey: scopeKeyOf(opts.projectId), generatedById: principal.userId }, orderBy: { generatedAt: "desc" } }),
   ]);
   const portfolio = allCases.filter(keep);
   const ids = new Set(portfolio.map((c) => c.state.employee.id));
@@ -78,7 +79,7 @@ export async function generateBriefing(role: BriefingRole, principal: Principal,
   }
   const row = await db.briefing.create({
     data: {
-      role, generatedAt: auditTimestamp(), generatedBy: principal.name, evaluationDate, sectionsJson: toJson(sections), snapshotJson: toJson(snapshotOf(portfolio)),
+      role, scopeKey: scopeKeyOf(opts.projectId), generatedAt: auditTimestamp(), generatedBy: principal.name, generatedById: principal.userId, evaluationDate, sectionsJson: toJson(sections), snapshotJson: toJson(snapshotOf(portfolio)),
       narrativeSource: outcome.ok && sections.some((s) => s.source === "AI") ? "AI" : "DETERMINISTIC", aiRunId: outcome.run.id, aiError: outcome.ok ? null : outcome.error, rejectedCount: rejected,
     },
   });
@@ -86,8 +87,11 @@ export async function generateBriefing(role: BriefingRole, principal: Principal,
   return row.id;
 }
 
-export async function listBriefings(role: BriefingRole, db: PrismaClient = prisma) {
-  return db.briefing.findMany({ where: { role }, orderBy: { generatedAt: "desc" }, take: 20 });
+export const scopeKeyOf = (projectId?: string | null) => (projectId ? `project:${projectId}` : "ALL");
+
+/** A user's own briefings for one role and scope (whole scope or one project). */
+export async function listBriefings(role: BriefingRole, userId: string, projectId?: string | null, db: PrismaClient = prisma) {
+  return db.briefing.findMany({ where: { role, generatedById: userId, scopeKey: scopeKeyOf(projectId) }, orderBy: { generatedAt: "desc" }, take: 20 });
 }
 
 export function toMarkdown(b: { role: string; generatedAt: string; evaluationDate: string; narrativeSource: string; sectionsJson: string }): string {

@@ -21,6 +21,7 @@ async function main() {
   const { evidenceAuthority } = await import("../src/domain/authority");
   const { recomputeAll } = await import("../src/modules/case/recompute");
   const { SYSTEM_ACTOR, audit } = await import("../src/modules/audit");
+  const { createDefaultChecklist } = await import("../src/modules/preboarding/service");
 
   try {
     // Children first (foreign keys).
@@ -38,6 +39,7 @@ async function main() {
     await prisma.evidence.deleteMany();
     await prisma.accessRequest.deleteMany();
     await prisma.kTActivity.deleteMany();
+    await prisma.preboardingItem.deleteMany();
     await prisma.user.deleteMany();
     await prisma.onboardingCase.deleteMany();
     await prisma.employee.deleteMany();
@@ -148,6 +150,23 @@ async function main() {
         location: "/Team/Operations/Onboarding", applicableRoles: "[]", copyAllowed: false, sourceEvidenceId: "EMAIL-008",
       },
     });
+
+    // Pre-boarding checklists for cases in pre-boarding. Statuses come only from tracker facts; everything else stays To do.
+    for (const c of CASES) {
+      const caseRow = await prisma.onboardingCase.findUniqueOrThrow({ where: { employeeId: c.id } });
+      if (caseRow.phase !== "PRE_BOARDING") continue;
+      await createDefaultChecklist(prisma, c.id, SYSTEM_ACTOR);
+      await prisma.preboardingItem.update({
+        where: { employeeId_templateKey: { employeeId: c.id, templateKey: "start-date" } },
+        data: { status: "DONE", evidenceId: `TRACKER-${c.id}`, note: `Start ${c.start} and movement "${c.movement}" are recorded in the tracker.`, updatedBy: "Starter pack tracker" },
+      });
+      if (c.manager) {
+        await prisma.preboardingItem.update({
+          where: { employeeId_templateKey: { employeeId: c.id, templateKey: "contacts" } },
+          data: { status: "IN_PROGRESS", evidenceId: `TRACKER-${c.id}`, note: `Line Manager named in the tracker (${c.manager}); Technical Lead and KT owner not named.`, updatedBy: "Starter pack tracker" },
+        });
+      }
+    }
 
     const summaries = await recomputeAll("seed", SYSTEM_ACTOR, prisma);
     await audit({ actor: SYSTEM_ACTOR, action: "SEED_COMPLETE", entityType: "SYSTEM", entityId: "ONBOARDIQ", details: `Seeded ${CASES.length} official cases, ${EVIDENCE.length} verbatim evidence sources and ${CLAIMS.length} transcribed claims; ${assignments.length} project assignments (sample ones labelled); recomputed ${summaries.length} cases.` }, prisma);

@@ -51,19 +51,21 @@ button, input, select, textarea { font: inherit; color: inherit; }
 
 .tabular { font-variant-numeric: tabular-nums; }
 
-/* Shared form controls. */
-.field {
-  width: 100%;
-  border: 1px solid var(--color-line-strong);
-  border-radius: 8px;
-  background: var(--color-surface);
-  padding: 7px 10px;
-  font-size: 14px;
-  line-height: 1.4;
+/* Shared form controls (in the components layer so utilities such as pl-9 can still override them). */
+@layer components {
+  .field {
+    width: 100%;
+    border: 1px solid var(--color-line-strong);
+    border-radius: 8px;
+    background: var(--color-surface);
+    padding: 7px 10px;
+    font-size: 14px;
+    line-height: 1.4;
+  }
+  .field:focus { outline: 2px solid var(--color-brand-200); border-color: var(--color-brand-500); }
+  .field:disabled { background: var(--color-canvas); color: var(--color-subtle); }
+  .label { display: block; font-size: 12px; font-weight: 600; color: var(--color-body); margin-bottom: 4px; }
 }
-.field:focus { outline: 2px solid var(--color-brand-200); border-color: var(--color-brand-500); }
-.field:disabled { background: var(--color-canvas); color: var(--color-subtle); }
-.label { display: block; font-size: 12px; font-weight: 600; color: var(--color-body); margin-bottom: 4px; }
 
 /* Simulator banner only: a slim, calm stripe. */
 .sim-banner { background-image: repeating-linear-gradient(135deg, #6d28d9 0 14px, #7c3aed 14px 28px); }

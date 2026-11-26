@@ -21,7 +21,7 @@ export default async function BriefingPage({ searchParams }: { searchParams: Pro
   const allowed = briefingRolesFor(scope);
   if (!allowed.length) redirect("/");
   const role: BriefingRole = allowed.includes(sp.role as BriefingRole) ? (sp.role as BriefingRole) : allowed.includes(session.role as BriefingRole) ? (session.role as BriefingRole) : allowed[0];
-  const history = (await listBriefings(role)).filter((b) => b.generatedBy === session.name);
+  const history = await listBriefings(role, session.userId);
   const current = (sp.id && history.find((b) => b.id === sp.id)) || history[0] || null;
   const sections = current ? parseJson<Section[]>(current.sectionsJson, []) : [];
   const findingIds = sections.flatMap((s) => s.statements.flatMap((x) => x.refs)).filter((r) => r.startsWith("finding:")).map((r) => r.slice(8));

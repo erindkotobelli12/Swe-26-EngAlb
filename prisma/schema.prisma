@@ -64,7 +64,31 @@ model Employee {
   evidence        Evidence[]
   actions         ActionItem[]
   assessments     ReadinessAssessment[]
+  preboarding     PreboardingItem[]
   user            User?
+}
+
+// A pre-boarding checklist item (template in src/config/preboarding.ts). Credentials are never stored.
+// category: HR_ADMIN | EQUIPMENT | ACCESS_REQUEST | WELCOME | CONTACTS; ownerRole: HR | LINE_MANAGER
+// status: TODO | IN_PROGRESS | DONE | BLOCKED | NOT_APPLICABLE
+model PreboardingItem {
+  id            String   @id @default(cuid())
+  employeeId    String
+  employee      Employee @relation(fields: [employeeId], references: [id])
+  templateKey   String?
+  title         String
+  category      String
+  ownerRole     String
+  status        String   @default("TODO")
+  blockerReason String?
+  note          String?
+  dueDate       String?
+  sortOrder     Int      @default(0)
+  evidenceId    String?
+  updatedBy     String
+  updatedAt     String
+
+  @@unique([employeeId, templateKey])
 }
 
 // status: ACTIVE | CLOSED
@@ -424,11 +448,14 @@ model RoadmapItem {
 
 // A role-specific management briefing. Every statement carries refs (finding:/evidence:/action:) validated server-side.
 // narrativeSource: AI (validated AI narrative) | DETERMINISTIC (AI unavailable or rejected; rule-generated statements).
+// scopeKey: "ALL" (the author's whole scope) or "project:<id>" (one project). generatedById: the author's account.
 model Briefing {
   id              String  @id @default(cuid())
   role            String
+  scopeKey        String  @default("ALL")
   generatedAt     String
   generatedBy     String
+  generatedById   String?
   evaluationDate  String
   sectionsJson    String
   snapshotJson    String
