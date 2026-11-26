@@ -1,6 +1,8 @@
 import { ACCESS_STATUS_LABEL, KT_STAGE_LABEL, roleLabel, type CaseState, type PersonRef } from "@/domain/types";
 import { formatDate } from "@/lib/clock";
 import { EvidenceChip, ProvenanceBadge } from "@/components/ui/badges";
+import ReliabilityBadge from "@/components/ui/ReliabilityBadge";
+import { classifyAccess, classifyKT } from "@/modules/reliability/classify";
 
 function personLine(p: PersonRef | null, fallback: string | null, role: string, project: string | null) {
   if (p?.name) return <span>{p.name}</span>;
@@ -31,7 +33,7 @@ export function AccessTable({ state }: { state: CaseState }) {
         <tbody>
           {state.access.map((a) => (
             <tr key={a.id} className="border-t border-slate-100 align-top" data-access={a.application} data-status={a.status}>
-              <td className="py-2 pr-3 font-semibold">{a.application}<p className="text-xs font-normal text-slate-500">{a.requiredScope}</p></td>
+              <td className="py-2 pr-3 font-semibold">{a.application}<p className="text-xs font-normal text-slate-500">{a.requiredScope}</p><ReliabilityBadge r={classifyAccess(state, a)} compact /></td>
               <td className="py-2 pr-3"><span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${a.status === "USABLE" ? "bg-emerald-50 text-emerald-700" : a.status === "PROVISIONED" || a.status === "APPROVED" ? "bg-amber-50 text-amber-800" : "bg-red-50 text-red-700"}`}>{ACCESS_STATUS_LABEL[a.status]}</span>{a.blockerReason && <p className="mt-1 text-xs text-slate-500">{a.blockerReason}</p>}</td>
               <td className="whitespace-nowrap py-2 pr-3">{a.requestDate ? formatDate(a.requestDate) : <span className="text-slate-400">Unknown</span>}</td>
               <td className="py-2 pr-3">{a.owner ?? <span className="font-semibold text-red-600">Not recorded</span>}{a.handlerRole && <p className="text-xs text-slate-500">Handled by {roleLabel(a.handlerRole)}</p>}</td>
@@ -60,6 +62,7 @@ export function KTTable({ state }: { state: CaseState }) {
           </div>
           <p className="mt-1 text-sm">{KT_STAGE_LABEL[k.stage]}{k.stage !== "NOT_STARTED" && <span className={`ml-2 text-xs font-semibold ${k.stageBasis === "OBSERVED" ? "text-emerald-700" : "text-amber-700"}`}>{k.stageBasis === "OBSERVED" ? "observed by technical owner" : k.stageBasis === "SELF_REPORTED" ? "self-reported, not observed" : k.stageBasis === "ASSESSMENT" ? "assessment only — does not count" : "reported, not observed"}</span>}</p>
           <p className="mt-1 text-xs text-slate-500">Owner: {k.owner ?? "not recorded"}{k.requiredApps.length ? ` · Uses: ${k.requiredApps.join(", ")}` : ""}{k.evidenceId ? " · " : ""}{k.evidenceId && <EvidenceChip id={k.evidenceId} />}</p>
+          {k.stage !== "NOT_STARTED" && <div className="mt-1"><ReliabilityBadge r={classifyKT(state, k)} compact /></div>}
           {k.originNote && <p className="mt-1 text-xs text-amber-800">{k.originNote}</p>}
         </li>
       ))}

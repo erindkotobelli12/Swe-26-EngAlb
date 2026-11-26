@@ -7,6 +7,7 @@ import { formatDate, getEvaluationDate } from "@/lib/clock";
 import { headline, kpis, loadPortfolio } from "@/modules/case/portfolio";
 import { can } from "@/modules/permissions";
 import { levelLabel } from "@/modules/readiness/evaluate";
+import { classifyCaseStatus, RELIABILITY_LABEL } from "@/modules/reliability/classify";
 import { recomputeAllAction } from "@/server/actions/case";
 import DashboardEmployeeTable from "@/components/DashboardEmployeeTable";
 import ActionButton from "@/components/ActionButton";
@@ -65,7 +66,7 @@ export default async function Dashboard() {
           employees={portfolio.map((c) => ({
             id: c.state.employee.id, name: c.state.employee.name, movement: c.state.employee.movement, project: c.state.employee.projectName ?? "Unknown",
             reported: c.readiness.reported, assessed: levelLabel(c.readiness.assessed), validated: c.readiness.validated ? levelLabel(c.readiness.validated) : "Not validated",
-            reliability: null, topIssue: c.open[0]?.title ?? null, topSeverity: c.open[0]?.severity ?? null, lastUpdate: formatDate(c.state.employee.lastUpdate),
+            reliability: RELIABILITY_LABEL[classifyCaseStatus(c.state).category], topIssue: c.open[0]?.title ?? null, topSeverity: c.open[0]?.severity ?? null, lastUpdate: formatDate(c.state.employee.lastUpdate),
           }))}
         />
         <aside className="space-y-5">

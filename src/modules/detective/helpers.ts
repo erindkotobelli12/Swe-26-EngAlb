@@ -21,8 +21,9 @@ export function claimFacts(state: CaseState, predicate: (c: ClaimItem) => boolea
   return approvedClaims(state).filter(predicate).map((c) => ({ statement: statement(c), evidenceId: c.evidenceId, excerpt: c.excerpt }));
 }
 
+/** Sources that can support a status: not the tracker row itself, not rejected, and not requests (a request asks, it does not attest). */
 export function nonTrackerEvidence(state: CaseState): EvidenceItem[] {
-  return state.evidence.filter((e) => e.sourceType !== "TRACKER" && e.reviewStatus !== "REJECTED");
+  return state.evidence.filter((e) => e.sourceType !== "TRACKER" && e.reviewStatus !== "REJECTED" && !e.isRequest);
 }
 
 export function candidate(type: FindingType, input: Omit<CandidateFinding, "type" | "category" | "severity" | "evidenceIds"> & { severity?: CandidateFinding["severity"] }): CandidateFinding {

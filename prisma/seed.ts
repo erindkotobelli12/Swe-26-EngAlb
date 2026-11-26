@@ -19,6 +19,7 @@ async function main() {
     // Children first (foreign keys).
     await prisma.auditLog.deleteMany();
     await prisma.aIRun.deleteMany();
+    await prisma.communication.deleteMany();
     await prisma.dependency.deleteMany();
     await prisma.actionItem.deleteMany();
     await prisma.readinessValidation.deleteMany();

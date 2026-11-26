@@ -102,9 +102,16 @@ export async function loadCaseState(employeeId: string, db: PrismaClient = prism
   };
 }
 
-/** Communications arrive with the Follow-Up feature; isolated so the loader stays one place. */
-async function loadCommunications(_db: PrismaClient, _employeeId: string): Promise<CommunicationItem[]> {
-  return [];
+/** Follow-up communications that include this employee (SQLite JSON column, filtered in memory). */
+async function loadCommunications(db: PrismaClient, employeeId: string): Promise<CommunicationItem[]> {
+  const rows = await db.communication.findMany({ where: { employeeIds: { contains: `"${employeeId}"` } }, orderBy: { createdAt: "desc" } });
+  return rows
+    .filter((c) => parseJson<string[]>(c.employeeIds, []).includes(employeeId))
+    .map((c) => ({
+      id: c.id, stakeholderRole: c.stakeholderRole, stakeholderLabel: c.stakeholderLabel, status: c.status, subject: c.subject,
+      requestEvidenceIds: parseJson(c.requestEvidenceIds, [] as string[]), outboxEvidenceIds: parseJson(c.outboxEvidenceIds, [] as string[]),
+      sentAt: c.sentAt, respondedAt: c.respondedAt,
+    }));
 }
 
 export async function listCaseEmployeeIds(db: PrismaClient = prisma, includeSimulated = false): Promise<string[]> {

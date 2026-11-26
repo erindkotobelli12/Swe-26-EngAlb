@@ -21,9 +21,12 @@ import DependencyMap from "@/components/map/DependencyMap";
 import DependencySuggestions from "@/components/map/DependencySuggestions";
 import Simulator from "@/components/simulator/Simulator";
 import { buildMapData } from "@/modules/dependencies/viewModel";
+import { loadFollowUpQueue } from "@/modules/followups/service";
 import { availableToggles, simulate } from "@/modules/simulator/simulate";
 import { overridesFrom, presetChoice } from "@/modules/simulator/choices";
 import { levelLabel } from "@/modules/readiness/evaluate";
+import ReliabilityBadge from "@/components/ui/ReliabilityBadge";
+import { classifyAccess, classifyCaseStatus, classifyKT } from "@/modules/reliability/classify";
 import HistoryTimeline from "@/components/case/HistoryTimeline";
 import { AccessTable, KTTable, Stakeholders } from "@/components/case/CaseRecords";
 import { ChecklistPanel, GateList, ReadinessTriple } from "@/components/case/ReadinessPanels";
@@ -72,7 +75,7 @@ export default async function EmployeeCase({ params, searchParams }: { params: P
       <div className="mt-5">
         {tab === "overview" && (
           <div className="space-y-5">
-            <ReadinessTriple readiness={readiness} />
+            <ReadinessTriple readiness={readiness} reliability={<ReliabilityBadge r={classifyCaseStatus(state)} />} />
             <div className="grid gap-5 xl:grid-cols-[1fr_380px]">
               <div className="space-y-5">
                 <Card title="Readiness gates"><GateList gates={readiness.gates} /></Card>
@@ -110,8 +113,21 @@ export default async function EmployeeCase({ params, searchParams }: { params: P
         })()}
 
         {tab === "investigation" && <InvestigationTab state={state} session={session} />}
-        {tab === "evidence" && <EvidenceTab employeeId={id} session={session} />}
+        {tab === "evidence" && (
+          <div className="space-y-4">
+            <Card title="Reliability of this case's statuses">
+              <p className="mb-3 text-xs text-slate-500">How trustworthy each status is, from source recency, authority, completeness, contradictions and human verification. Reliability is separate from readiness.</p>
+              <div className="grid gap-2 text-sm md:grid-cols-2">
+                <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-100 p-2"><span>Reported: <b>{state.employee.trackerStatus}</b></span><ReliabilityBadge r={classifyCaseStatus(state)} /></div>
+                {state.access.map((a) => <div key={a.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-100 p-2"><span>{a.application}: {a.status.replaceAll("_", " ").toLowerCase()}</span><ReliabilityBadge r={classifyAccess(state, a)} compact /></div>)}
+                {state.kt.filter((k) => k.stage !== "NOT_STARTED").map((k) => <div key={k.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-100 p-2"><span>{k.title}: {k.stage.replaceAll("_", " ").toLowerCase()}</span><ReliabilityBadge r={classifyKT(state, k)} compact /></div>)}
+              </div>
+            </Card>
+            <EvidenceTab employeeId={id} session={session} />
+          </div>
+        )}
         {tab === "history" && <HistoryTab employeeId={id} />}
+        {tab === "followups" && <FollowUpsTab employeeId={id} />}
       </div>
     </div>
   );
@@ -174,6 +190,23 @@ async function EvidenceTab({ employeeId, session }: { employeeId: string; sessio
         />
       ))}
       {project.length > 0 && <><h2 className="pt-2 font-bold">Project-level evidence</h2>{project.map((e) => <EvidenceCard key={e.id} e={e} />)}</>}
+    </div>
+  );
+}
+
+async function FollowUpsTab({ employeeId }: { employeeId: string }) {
+  const { groups, communications } = await loadFollowUpQueue();
+  const mine = communications.filter((c) => parseJson<string[]>(c.employeeIds, []).includes(employeeId));
+  const pending = groups.map((g) => ({ g, items: g.items.filter((i) => i.employeeId === employeeId) })).filter((x) => x.items.length);
+  return (
+    <div className="space-y-4">
+      <p className="text-sm text-slate-600">Follow-ups are consolidated across cases per stakeholder in the <Link href="/follow-ups" className="font-semibold text-indigo-700">Follow-Up Center</Link>, where drafts are edited, approved and sent (simulated).</p>
+      <Card title={`Follow-ups including this employee (${mine.length})`}>
+        {mine.length ? <ul className="space-y-2 text-sm">{mine.map((c) => <li key={c.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-100 p-2"><span><b>{c.stakeholderLabel}</b> · {c.subject}</span><span className="text-xs font-bold uppercase text-slate-500">{c.status === "SENT_SIMULATED" ? "sent (simulated)" : c.status.toLowerCase()}</span></li>)}</ul> : <p className="text-sm text-slate-500">None yet.</p>}
+      </Card>
+      <Card title="Pending items not yet in a draft">
+        {pending.length ? pending.map(({ g, items }) => <div key={g.stakeholder.key} className="mb-3"><p className="text-sm font-bold">{g.stakeholder.label}</p><ul className="mt-1 list-disc pl-5 text-sm">{items.map((i) => <li key={i.key}>{i.title} — {i.ask} <span className="text-xs text-slate-500">(open {i.daysOpen} d, priority {i.score})</span></li>)}</ul></div>) : <p className="text-sm text-slate-500">Nothing pending.</p>}
+      </Card>
     </div>
   );
 }

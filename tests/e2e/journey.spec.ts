@@ -65,10 +65,65 @@ test("4. Simulator: Helix usable + Orion approved changes the simulated level; a
   await expect(page.locator('[data-access="Helix Service Desk"]')).toHaveAttribute("data-status", "REQUESTED");
 });
 
+test("5. Follow-Up Center: one Access Support draft and a separate app-owner request; edit, approve, send (simulated)", async ({ page }) => {
+  await as(page, "demo-pmo");
+  await page.goto("/follow-ups");
+  const accessGroup = page.locator("[data-group]", { hasText: "Access Support (name not recorded)" });
+  await expect(accessGroup.locator('[data-item^="access:ACC-LEO-"]')).toHaveCount(3);
+  await expect(page.locator("[data-group]", { hasText: "Application Owner — Orion Portal" }).locator('[data-item="approval:ACC-LEO-ORION"]')).toBeVisible();
+  await accessGroup.getByRole("button", { name: "Create draft" }).click();
+  const card = page.locator('[data-communication="Access Support (name not recorded)"]');
+  await expect(card).toHaveAttribute("data-status", "DRAFT");
+  await card.getByLabel("Message body").fill((await card.getByLabel("Message body").inputValue()).replace("Thank you,", "Many thanks for your help,\nThank you,"));
+  await card.getByRole("button", { name: "Save edit" }).click();
+  await expect(card.getByText("draft: edited by a human")).toBeVisible();
+  await card.getByRole("button", { name: "Approve" }).click();
+  await expect(card).toHaveAttribute("data-status", "APPROVED");
+  await card.getByRole("button", { name: "Send (simulated)" }).click();
+  await expect(card).toHaveAttribute("data-status", "SENT_SIMULATED");
+  await expect(card.getByText("SIMULATED OUTBOX — nothing was sent outside this machine.")).toBeVisible();
+});
+
+test("6. Record the response; approving its claim makes Helix usable and the pipeline updates the case", async ({ page }) => {
+  await as(page, "demo-pmo");
+  await page.goto("/follow-ups");
+  const card = page.locator('[data-communication="Access Support (name not recorded)"]');
+  const about = card.getByLabel("Response is about");
+  if (await about.count()) await about.selectOption("ONB-002");
+  await card.getByLabel("Response text").fill("Helix Service Desk has now been provisioned. Leo logged in successfully this morning.");
+  await card.getByRole("button", { name: "Record response" }).click();
+  await expect(card).toHaveAttribute("data-status", "RESPONDED");
+
+  await page.goto("/employees/ONB-002?tab=evidence");
+  const response = page.locator("article", { hasText: "Response from Access Support" }).first();
+  await response.getByRole("button", { name: "Add claim manually" }).click();
+  await response.getByLabel("Field").fill("access.Helix Service Desk.status");
+  await response.getByLabel("Value").fill("USABLE");
+  await response.getByLabel("Verbatim excerpt").fill("Leo logged in successfully");
+  await response.getByRole("button", { name: "Save as pending claim" }).click();
+  const claim = page.locator('[data-claim-field="access.Helix Service Desk.status"]', { hasText: "USABLE" }).last();
+  await claim.getByRole("button", { name: "Approve claim" }).click();
+  const steps = page.getByTestId("pipeline-steps");
+  await expect(steps).toContainText("4. State update");
+  await expect(steps).toContainText("USABLE");
+  await expect(steps).toContainText("Unblocked: Practical ticket-handling KT");
+
+  await page.goto("/employees/ONB-002");
+  await expect(page.locator('[data-access="Helix Service Desk"]')).toHaveAttribute("data-status", "USABLE");
+  await expect(page.getByTestId("assessed-level")).toHaveText("Pre-onboarding");
+  await page.goto("/employees/ONB-002?tab=map");
+  await expect(page.locator('[data-node-key="access:ACC-LEO-HELIX"]')).toHaveAttribute("data-display", "SATISFIED");
+  await page.goto("/employees/ONB-002?tab=history");
+  await expect(page.getByText("pipeline run").first()).toBeVisible();
+  await expect(page.getByText("claim approved").first()).toBeVisible();
+});
+
 test("7. Eva: side-by-side conflict; the Technical Lead records NEEDS_MORE_EVIDENCE", async ({ page }) => {
   await as(page, "demo-tl");
   await page.goto("/employees/ONB-005?tab=investigation");
   await expect(page.getByTestId("conflict-viewer")).toContainText("Eva is working independently");
+  await page.goto("/employees/ONB-005");
+  await expect(page.locator('[data-reliability="CONFLICTING"]').first()).toBeVisible();
   await page.goto("/employees/ONB-005#validation");
   const form = page.getByTestId("validation-form");
   await form.getByLabel("Validation decision").selectOption("NEEDS_MORE_EVIDENCE");

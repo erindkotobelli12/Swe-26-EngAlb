@@ -222,8 +222,12 @@ export type ValidationItem = {
 export type CommunicationItem = {
   id: string;
   stakeholderRole: string;
+  stakeholderLabel: string;
   status: string;
-  requestEvidenceId: string | null;
+  /** Original requests (e.g. an unanswered email) this follow-up chases. */
+  requestEvidenceIds: string[];
+  outboxEvidenceIds: string[];
+  subject: string;
   sentAt: string | null;
   respondedAt: string | null;
 };

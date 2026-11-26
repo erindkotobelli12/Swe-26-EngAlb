@@ -9,6 +9,7 @@ import { audit, type Actor } from "@/modules/audit";
 import { runDetectors } from "@/modules/detective/detectors";
 import { evaluateReadiness } from "@/modules/readiness/evaluate";
 import { latestValidation } from "@/modules/readiness/gates";
+import { classifyCaseStatus } from "@/modules/reliability/classify";
 import { loadCaseState, listCaseEmployeeIds } from "./loadCaseState";
 
 export const findingId = (caseId: string, fingerprint: string) =>
@@ -127,6 +128,7 @@ export async function recomputeCase(employeeId: string, trigger: string, actor: 
       gatesJson: toJson(result.gates),
       riskFlags: toJson(openTypes),
       validatedStatus: validation?.state === "APPROVED" && validation.validatedLevel ? validation.validatedLevel : "NOT_VALIDATED",
+      reliability: classifyCaseStatus(state).category,
       lastRecomputedAt: now,
     },
   });

@@ -42,7 +42,7 @@ export const unansweredRequest: Detector = ({ state }) => {
   const out = [];
   for (const req of state.evidence.filter((e) => e.isRequest && e.reviewStatus !== "REJECTED")) {
     const replied = state.evidence.some((e) => e.inReplyToId === req.id && e.reviewStatus === "APPROVED")
-      || state.communications.some((c) => c.requestEvidenceId === req.id && (c.status === "RESPONDED" || c.status === "CLOSED"));
+      || state.communications.some((c) => (c.requestEvidenceIds.includes(req.id) || c.outboxEvidenceIds.includes(req.id)) && (c.status === "RESPONDED" || c.status === "CLOSED"));
     const age = daysBetween(req.timestamp, state.evaluationDate);
     if (replied || age <= thresholds.FOLLOW_UP_AFTER_DAYS) continue;
     const recipient = req.recipients[0] ?? null;

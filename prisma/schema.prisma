@@ -312,6 +312,37 @@ model Dependency {
   @@unique([employeeId, fromType, fromId, toType, toId])
 }
 
+// A consolidated follow-up to one stakeholder on one channel. Never really sent: "send" puts it in a simulated outbox.
+// status: DRAFT | APPROVED | SENT_SIMULATED | RESPONDED | CLOSED. draftOrigin: TEMPLATE | AI | HUMAN_EDITED.
+model Communication {
+  id                       String  @id @default(cuid())
+  stakeholderKey           String
+  stakeholderRole          String
+  stakeholderPersonId      String?
+  stakeholderLabel         String
+  channel                  String
+  subject                  String
+  body                     String
+  itemsJson                String  @default("[]")
+  employeeIds              String  @default("[]")
+  requestEvidenceIds       String  @default("[]")
+  outboxEvidenceIds        String  @default("[]")
+  status                   String  @default("DRAFT")
+  priorityScore            Int     @default(0)
+  escalationLevel          Int     @default(0)
+  escalationRecommendation String?
+  draftOrigin              String  @default("TEMPLATE")
+  aiRunId                  String?
+  responseEvidenceId       String?
+  createdAt                String
+  createdBy                String
+  approvedBy               String?
+  approvedAt               String?
+  sentAt                   String?
+  respondedAt              String?
+  closedAt                 String?
+}
+
 // AI transparency log: every agent call, cached by inputHash. inputRefs holds IDs only.
 model AIRun {
   id            String @id @default(cuid())
